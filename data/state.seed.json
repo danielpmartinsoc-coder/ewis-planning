@@ -1,0 +1,652 @@
+{
+  "ecns": [
+    {
+      "id": "ECN-001",
+      "description": "Connector pin count increased from 18 to 24 on J7-A to support new sensor suite",
+      "affectedHarnesses": [
+        "H-F01",
+        "H-F03"
+      ],
+      "affectedBOMItems": [
+        "CONN-D38999-24P",
+        "BACK-SHELL-24"
+      ],
+      "status": "pending",
+      "raisedBy": "M. Santos",
+      "raisedAt": "2026-05-28"
+    },
+    {
+      "id": "ECN-002",
+      "description": "Wire gauge change on power feeds from AWG 20 to AWG 18 per thermal analysis",
+      "affectedHarnesses": [
+        "H-F02",
+        "H-F07"
+      ],
+      "affectedBOMItems": [
+        "WIRE-AWG18-RED",
+        "WIRE-AWG18-BLK"
+      ],
+      "status": "approved",
+      "raisedBy": "J. Ferreira",
+      "raisedAt": "2026-05-15"
+    },
+    {
+      "id": "ECN-003",
+      "description": "Shielding requirement added to data bus segment between avionics bay and sensor cluster",
+      "affectedHarnesses": [
+        "H-A01",
+        "H-A02"
+      ],
+      "affectedBOMItems": [
+        "SHIELD-TAPE-25MM",
+        "DRAIN-WIRE-AWG24"
+      ],
+      "status": "pending",
+      "raisedBy": "C. Oliveira",
+      "raisedAt": "2026-06-01"
+    }
+  ],
+  "milestones": [
+    {
+      "project": "FALCON",
+      "phase": "F2",
+      "label": "Architecture Review",
+      "planned": "2026-02-14",
+      "actual": "2026-02-14",
+      "status": "done"
+    },
+    {
+      "project": "FALCON",
+      "phase": "F3",
+      "label": "Topology Freeze",
+      "planned": "2026-03-07",
+      "actual": "2026-03-10",
+      "status": "done"
+    },
+    {
+      "project": "FALCON",
+      "phase": "F4",
+      "label": "ICD Sign-off",
+      "planned": "2026-03-28",
+      "actual": "2026-04-02",
+      "status": "done"
+    },
+    {
+      "project": "FALCON",
+      "phase": "F5",
+      "label": "Schematic Release",
+      "planned": "2026-04-25",
+      "actual": null,
+      "status": "risk"
+    },
+    {
+      "project": "FALCON",
+      "phase": "F6",
+      "label": "BoM Release",
+      "planned": "2026-05-16",
+      "actual": null,
+      "status": "open"
+    },
+    {
+      "project": "ALPHA",
+      "phase": "F2",
+      "label": "Architecture Review",
+      "planned": "2026-03-21",
+      "actual": "2026-03-21",
+      "status": "done"
+    },
+    {
+      "project": "ALPHA",
+      "phase": "F3",
+      "label": "Topology Freeze",
+      "planned": "2026-04-11",
+      "actual": "2026-04-14",
+      "status": "done"
+    },
+    {
+      "project": "ALPHA",
+      "phase": "F4",
+      "label": "ICD Sign-off",
+      "planned": "2026-05-02",
+      "actual": null,
+      "status": "risk"
+    },
+    {
+      "project": "ALPHA",
+      "phase": "F5",
+      "label": "Schematic Release",
+      "planned": "2026-05-30",
+      "actual": null,
+      "status": "open"
+    },
+    {
+      "project": "ALPHA",
+      "phase": "F6",
+      "label": "BoM Release",
+      "planned": "2026-06-20",
+      "actual": null,
+      "status": "open"
+    },
+    {
+      "project": "PROJ-001",
+      "phase": "F2",
+      "label": "Architecture Review",
+      "planned": "2026-05-09",
+      "actual": "2026-05-09",
+      "status": "done"
+    },
+    {
+      "project": "PROJ-001",
+      "phase": "F3",
+      "label": "Topology Freeze",
+      "planned": "2026-06-13",
+      "actual": null,
+      "status": "open"
+    },
+    {
+      "project": "PROJ-001",
+      "phase": "F4",
+      "label": "ICD Sign-off",
+      "planned": "2026-07-04",
+      "actual": null,
+      "status": "open"
+    },
+    {
+      "project": "PROJ-001",
+      "phase": "F5",
+      "label": "Schematic Release",
+      "planned": "2026-07-25",
+      "actual": null,
+      "status": "open"
+    },
+    {
+      "project": "PROJ-001",
+      "phase": "F6",
+      "label": "BoM Release",
+      "planned": "2026-08-15",
+      "actual": null,
+      "status": "open"
+    }
+  ],
+  "harnesses": [
+    {
+      "id": "H-F01",
+      "project": "FALCON",
+      "name": "Power Distribution",
+      "stage": 3,
+      "blocked": true,
+      "blockReason": "ECN-001 pending approval — connector change impacts termination drawing",
+      "responsible": "M. Santos",
+      "revision": "B",
+      "ecns": [
+        "ECN-001"
+      ],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F02",
+      "project": "FALCON",
+      "name": "Avionics Bus",
+      "stage": 4,
+      "blocked": false,
+      "responsible": "J. Ferreira",
+      "revision": "A",
+      "ecns": [
+        "ECN-002"
+      ],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F03",
+      "project": "FALCON",
+      "name": "Sensor Harness FWD",
+      "stage": 2,
+      "blocked": true,
+      "blockReason": "Procurement lead time exceeds plan — AWG18 shielded not in stock",
+      "responsible": "M. Santos",
+      "revision": "A",
+      "ecns": [
+        "ECN-001"
+      ],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F04",
+      "project": "FALCON",
+      "name": "Flight Control",
+      "stage": 5,
+      "blocked": false,
+      "responsible": "C. Oliveira",
+      "revision": "C",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F05",
+      "project": "FALCON",
+      "name": "Lighting & Signalling",
+      "stage": 6,
+      "blocked": false,
+      "responsible": "T. Ribeiro",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F06",
+      "project": "FALCON",
+      "name": "Ground Return Network",
+      "stage": 1,
+      "blocked": false,
+      "responsible": "J. Ferreira",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F07",
+      "project": "FALCON",
+      "name": "ECS Control",
+      "stage": 2,
+      "blocked": false,
+      "responsible": "R. Alves",
+      "revision": "B",
+      "ecns": [
+        "ECN-002"
+      ],
+      "noteCount": 0
+    },
+    {
+      "id": "H-F08",
+      "project": "FALCON",
+      "name": "Engine FADEC",
+      "stage": 0,
+      "blocked": false,
+      "responsible": "C. Oliveira",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-A01",
+      "project": "ALPHA",
+      "name": "Primary Power",
+      "stage": 3,
+      "blocked": false,
+      "responsible": "T. Ribeiro",
+      "revision": "A",
+      "ecns": [
+        "ECN-003"
+      ],
+      "noteCount": 0
+    },
+    {
+      "id": "H-A02",
+      "project": "ALPHA",
+      "name": "Data Bus Network",
+      "stage": 2,
+      "blocked": true,
+      "blockReason": "ECN-003 shielding change requires re-routing in zone 4B",
+      "responsible": "C. Oliveira",
+      "revision": "A",
+      "ecns": [
+        "ECN-003"
+      ],
+      "noteCount": 0
+    },
+    {
+      "id": "H-A03",
+      "project": "ALPHA",
+      "name": "Cockpit Instruments",
+      "stage": 4,
+      "blocked": false,
+      "responsible": "M. Santos",
+      "revision": "B",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-A04",
+      "project": "ALPHA",
+      "name": "Landing Gear Control",
+      "stage": 1,
+      "blocked": false,
+      "responsible": "R. Alves",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-A05",
+      "project": "ALPHA",
+      "name": "Hydraulic Monitoring",
+      "stage": 0,
+      "blocked": false,
+      "responsible": "J. Ferreira",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-A06",
+      "project": "ALPHA",
+      "name": "Cabin Systems",
+      "stage": 5,
+      "blocked": false,
+      "responsible": "T. Ribeiro",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-P01",
+      "project": "PROJ-001",
+      "name": "Main Power Bus",
+      "stage": 1,
+      "blocked": false,
+      "responsible": "R. Alves",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-P02",
+      "project": "PROJ-001",
+      "name": "Avionics Distribution",
+      "stage": 0,
+      "blocked": false,
+      "responsible": "M. Santos",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    },
+    {
+      "id": "H-P03",
+      "project": "PROJ-001",
+      "name": "Sensor Network FWD",
+      "stage": 0,
+      "blocked": false,
+      "responsible": "J. Ferreira",
+      "revision": "A",
+      "ecns": [],
+      "noteCount": 0
+    }
+  ],
+  "people": [
+    {
+      "id": "P1",
+      "name": "M. Santos",
+      "role": "Lead Engineer",
+      "allocations": [
+        {
+          "harnessId": "H-F01",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 12
+        },
+        {
+          "harnessId": "H-F03",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-A03",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W24",
+          "estimatedHours": 10
+        },
+        {
+          "harnessId": "H-F01",
+          "projectId": "FALCON",
+          "weekISO": "2026-W25",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-P02",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W25",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-A03",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W25",
+          "estimatedHours": 6
+        },
+        {
+          "harnessId": "H-F01",
+          "projectId": "FALCON",
+          "weekISO": "2026-W26",
+          "estimatedHours": 10
+        },
+        {
+          "harnessId": "H-P02",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W26",
+          "estimatedHours": 12
+        },
+        {
+          "harnessId": "H-F01",
+          "projectId": "FALCON",
+          "weekISO": "2026-W27",
+          "estimatedHours": 8
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "name": "J. Ferreira",
+      "role": "Senior Engineer",
+      "allocations": [
+        {
+          "harnessId": "H-F02",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 14
+        },
+        {
+          "harnessId": "H-F06",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 6
+        },
+        {
+          "harnessId": "H-F02",
+          "projectId": "FALCON",
+          "weekISO": "2026-W25",
+          "estimatedHours": 14
+        },
+        {
+          "harnessId": "H-A05",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W25",
+          "estimatedHours": 10
+        },
+        {
+          "harnessId": "H-P03",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W25",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-A05",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W26",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-P03",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W26",
+          "estimatedHours": 12
+        },
+        {
+          "harnessId": "H-A05",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W27",
+          "estimatedHours": 8
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "name": "C. Oliveira",
+      "role": "Systems Engineer",
+      "allocations": [
+        {
+          "harnessId": "H-F04",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-A02",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W24",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-F04",
+          "projectId": "FALCON",
+          "weekISO": "2026-W25",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-A02",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W25",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-F08",
+          "projectId": "FALCON",
+          "weekISO": "2026-W25",
+          "estimatedHours": 6
+        },
+        {
+          "harnessId": "H-A02",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W26",
+          "estimatedHours": 12
+        },
+        {
+          "harnessId": "H-F08",
+          "projectId": "FALCON",
+          "weekISO": "2026-W26",
+          "estimatedHours": 14
+        },
+        {
+          "harnessId": "H-F08",
+          "projectId": "FALCON",
+          "weekISO": "2026-W27",
+          "estimatedHours": 16
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "name": "T. Ribeiro",
+      "role": "Design Engineer",
+      "allocations": [
+        {
+          "harnessId": "H-F05",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 10
+        },
+        {
+          "harnessId": "H-A01",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W24",
+          "estimatedHours": 12
+        },
+        {
+          "harnessId": "H-A06",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W24",
+          "estimatedHours": 6
+        },
+        {
+          "harnessId": "H-F05",
+          "projectId": "FALCON",
+          "weekISO": "2026-W25",
+          "estimatedHours": 6
+        },
+        {
+          "harnessId": "H-A06",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W25",
+          "estimatedHours": 18
+        },
+        {
+          "harnessId": "H-A06",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W26",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-A01",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W26",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-A01",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W27",
+          "estimatedHours": 14
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "name": "R. Alves",
+      "role": "Junior Engineer",
+      "allocations": [
+        {
+          "harnessId": "H-F07",
+          "projectId": "FALCON",
+          "weekISO": "2026-W24",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-A04",
+          "projectId": "ALPHA",
+          "weekISO": "2026-W24",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-F07",
+          "projectId": "FALCON",
+          "weekISO": "2026-W25",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-P01",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W25",
+          "estimatedHours": 8
+        },
+        {
+          "harnessId": "H-F07",
+          "projectId": "FALCON",
+          "weekISO": "2026-W26",
+          "estimatedHours": 10
+        },
+        {
+          "harnessId": "H-P01",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W26",
+          "estimatedHours": 16
+        },
+        {
+          "harnessId": "H-P01",
+          "projectId": "PROJ-001",
+          "weekISO": "2026-W27",
+          "estimatedHours": 16
+        }
+      ]
+    }
+  ]
+}

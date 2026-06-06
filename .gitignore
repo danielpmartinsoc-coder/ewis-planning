@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Runtime data (generated at runtime)
+data/state.json
+data/state.json.bak
+data/audit_log.json
+
+# Environment / secrets
+.env
+.env.local
+ewis_config.json.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
