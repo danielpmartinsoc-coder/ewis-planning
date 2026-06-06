@@ -5,7 +5,7 @@ import { STAGES } from '../../types';
 interface Props {
   harness: Harness;
   direction: 'advance' | 'back';
-  onConfirm: (reason: string) => void;
+  onConfirm: (reason: string, actualHours: number) => void;
   onCancel: () => void;
 }
 
@@ -25,6 +25,7 @@ const BACK_QUESTIONS = [
 
 export function StageMoveDialog({ harness, direction, onConfirm, onCancel }: Props) {
   const [reason, setReason] = useState('');
+  const [hours, setHours] = useState(0);
   const isAdvance = direction === 'advance';
   const fromIdx = isAdvance ? harness.stage     : harness.stage;
   const toIdx   = isAdvance ? harness.stage + 1 : harness.stage - 1;
@@ -36,7 +37,7 @@ export function StageMoveDialog({ harness, direction, onConfirm, onCancel }: Pro
   function handleConfirm(e: React.FormEvent) {
     e.preventDefault();
     if (!canConfirm) return;
-    onConfirm(reason.trim());
+    onConfirm(reason.trim(), hours);
   }
 
   return (
@@ -77,6 +78,21 @@ export function StageMoveDialog({ harness, direction, onConfirm, onCancel }: Pro
               </div>
             ))}
           </div>
+
+          {isAdvance && (
+            <div>
+              <label className="block text-xs font-semibold text-mid mb-1.5">
+                Hours spent in this stage
+              </label>
+              <input
+                type="number" min="0" step="0.25" value={hours}
+                onChange={(e) => setHours(parseFloat(e.target.value) || 0)}
+                className="w-full rounded border border-border bg-surface2 px-3 py-2 text-sm text-text focus:outline-none focus:border-mid"
+                placeholder="0.00"
+              />
+              <p className="text-[10px] text-dim mt-1">Hours spent assembling at this stage — logged to the work order</p>
+            </div>
+          )}
 
           {/* Reason field */}
           <div>

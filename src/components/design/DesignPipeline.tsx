@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { AppState, MilestoneStatus, Milestone } from '../../types';
+import type { AppState, MilestoneStatus, Milestone, PhaseItem, PhaseItemType, Responsible } from '../../types';
 import type { DesignNote } from '../../api';
 import * as api from '../../api';
 import {
@@ -515,6 +515,186 @@ function DesignGantt({
   );
 }
 
+// ── Phase Items panel ─────────────────────────────────────────────────────────
+const ITEM_TYPE_OPTIONS: PhaseItemType[] = ['diagram','spec','document','checklist','task','other'];
+const ITEM_STATUS_STYLE: Record<string, string> = {
+  open:        'bg-surface border-border text-dim',
+  in_progress: 'bg-risk/10 border-risk/30 text-risk',
+  review:      'bg-accent/10 border-accent/30 text-accent',
+  done:        'bg-ok/10 border-ok/30 text-ok',
+  blocked:     'bg-blocked/10 border-blocked/30 text-blocked',
+};
+
+function PhaseItemsPanel({ project, phase, responsibles }: {
+  project: string; phase: string; responsibles: Responsible[];
+}) {
+  const [items,     setItems]    = useState<PhaseItem[]>([]);
+  const [expanded,  setExpanded] = useState(false);
+  const [showForm,  setShowForm] = useState(false);
+  const [openItem,  setOpenItem] = useState<PhaseItem | null>(null);
+  const [newTitle,  setNewTitle] = useState('');
+  const [newType,   setNewType]  = useState('task');
+  const [newResp,   setNewResp]  = useState('');
+  const [newDue,    setNewDue]   = useState('');
+  const [entryBodies, setEntryBodies] = useState<Record<string,string>>({});
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    const res = await api.getPhaseItems(project, phase);
+    setItems(res.items || []);
+  }
+
+  useEffect(() => { if (expanded) load(); }, [expanded]);
+
+  async function createItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newTitle.trim()) return;
+    setBusy(true);
+    await api.createPhaseItem(project, phase, { title: newTitle.trim(), itemType: newType, responsibleId: newResp, dueDate: newDue || null });
+    setBusy(false);
+    setNewTitle(''); setNewType('task'); setNewResp(''); setNewDue('');
+    setShowForm(false);
+    load();
+  }
+
+  async function updateStatus(item: PhaseItem, status: string) {
+    await api.updatePhaseItem(item.id, { status });
+    load();
+  }
+
+  async function removeItem(id: string) {
+    if (!confirm('Delete this item?')) return;
+    await api.deletePhaseItem(id);
+    load();
+  }
+
+  async function addEntry(item: PhaseItem, type: 'notes'|'comments'|'agreements') {
+    const body = (entryBodies[type] || '').trim();
+    if (!body) return;
+    await api.addPhaseItemEntry(item.id, type, { body, author: 'Me' });
+    setEntryBodies(prev => ({ ...prev, [type]: '' }));
+    const res = await api.getPhaseItems(project, phase);
+    const updated = (res.items || []).find(i => i.id === item.id) || null;
+    setOpenItem(updated);
+    setItems(res.items || []);
+  }
+
+  async function removeEntry(item: PhaseItem, type: 'notes'|'comments'|'agreements', entryId: string) {
+    await api.deletePhaseItemEntry(item.id, type, entryId);
+    const res = await api.getPhaseItems(project, phase);
+    const updated = (res.items || []).find(i => i.id === item.id) || null;
+    setOpenItem(updated);
+    setItems(res.items || []);
+  }
+
+  const doneCount = items.filter(i => i.status === 'done').length;
+
+  return (
+    <div className="mt-2 border-t border-border/40 pt-2">
+      <button type="button"
+        className="flex items-center gap-2 text-[11px] font-mono text-dim hover:text-mid w-full text-left"
+        onClick={() => setExpanded(!expanded)}>
+        <span>{expanded ? '▾' : '▸'}</span>
+        <span>Items {items.length > 0 ? `(${doneCount}/${items.length} done)` : ''}</span>
+        {!expanded && <button type="button" onClick={(e) => { e.stopPropagation(); setExpanded(true); setShowForm(true); }}
+          className="ml-auto px-2 py-0.5 rounded border border-border hover:border-accent/50 text-[10px] hover:text-accent">+ Add</button>}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 space-y-1.5">
+          {items.map(item => {
+            const resp = responsibles.find(r => r.id === item.responsibleId);
+            return (
+              <div key={item.id} className="bg-surface2 rounded-lg border border-border/60 px-3 py-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface border border-border font-mono text-dim">{item.itemType}</span>
+                  <span className="text-xs font-medium text-text flex-1 cursor-pointer hover:text-accent" onClick={() => setOpenItem(item)}>{item.title}</span>
+                  <select value={item.status} onChange={(e) => updateStatus(item, e.target.value)}
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded border cursor-pointer bg-surface focus:outline-none ${ITEM_STATUS_STYLE[item.status] || ''}`}>
+                    {['open','in_progress','review','done','blocked'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  {resp && <span className="text-[10px] text-dim">{resp.name}</span>}
+                  {item.dueDate && <span className="text-[10px] font-mono text-dim">{item.dueDate}</span>}
+                  <span className="text-[10px] text-dim">{(item.notes?.length||0)+(item.comments?.length||0)+(item.agreements?.length||0)} entries</span>
+                  <button onClick={() => removeItem(item.id)} className="text-[10px] text-dim hover:text-blocked ml-1">×</button>
+                </div>
+              </div>
+            );
+          })}
+
+          {showForm ? (
+            <form onSubmit={createItem} className="bg-surface border border-border rounded-lg p-3 space-y-2">
+              <input value={newTitle} onChange={e => setNewTitle(e.target.value)} autoFocus
+                placeholder="Item title…"
+                className="w-full px-2 py-1.5 rounded border border-border bg-surface2 text-xs text-text focus:outline-none" />
+              <div className="flex gap-2">
+                <select value={newType} onChange={e => setNewType(e.target.value)}
+                  className="px-2 py-1 rounded border border-border bg-surface2 text-xs text-text focus:outline-none">
+                  {ITEM_TYPE_OPTIONS.map(t => <option key={t}>{t}</option>)}
+                </select>
+                <select value={newResp} onChange={e => setNewResp(e.target.value)}
+                  className="flex-1 px-2 py-1 rounded border border-border bg-surface2 text-xs text-text focus:outline-none">
+                  <option value="">— responsible —</option>
+                  {responsibles.filter(r => r.active).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <input type="date" value={newDue} onChange={e => setNewDue(e.target.value)}
+                  className="px-2 py-1 rounded border border-border bg-surface2 text-xs text-text focus:outline-none" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1 rounded border border-border text-xs text-dim">Cancel</button>
+                <button type="submit" disabled={busy || !newTitle.trim()} className="px-3 py-1 rounded bg-done/90 text-white text-xs disabled:opacity-50">Add</button>
+              </div>
+            </form>
+          ) : (
+            <button type="button" onClick={() => setShowForm(true)}
+              className="w-full text-[11px] text-dim border border-dashed border-border/60 rounded-lg py-1.5 hover:border-border hover:text-mid">
+              + Add item
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Item detail modal */}
+      {openItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setOpenItem(null)}>
+          <div className="w-[560px] max-h-[85vh] overflow-y-auto bg-surface rounded-2xl border border-border shadow-card-md p-5"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <span className="text-[10px] font-mono text-dim px-1.5 py-0.5 rounded bg-surface2 border border-border">{openItem.itemType}</span>
+                <h3 className="font-semibold text-sm text-text mt-1">{openItem.title}</h3>
+              </div>
+              <button onClick={() => setOpenItem(null)} className="text-dim hover:text-text text-lg">×</button>
+            </div>
+
+            {(['notes','comments','agreements'] as const).map(type => (
+              <div key={type} className="mb-4">
+                <p className="text-[10px] font-mono text-dim uppercase tracking-wider mb-2 capitalize">{type}</p>
+                <div className="space-y-1.5 mb-2">
+                  {(openItem[type] || []).map(entry => (
+                    <div key={entry.id} className="bg-surface2 rounded-lg border border-border/60 px-3 py-2 text-xs flex gap-2">
+                      <span className="flex-1 text-text">{entry.body}</span>
+                      <span className="text-dim shrink-0">{entry.author} · {entry.createdAt}</span>
+                      <button onClick={() => removeEntry(openItem, type, entry.id)} className="text-dim hover:text-blocked shrink-0">×</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input value={entryBodies[type]||''} onChange={e => setEntryBodies(prev => ({...prev, [type]: e.target.value}))}
+                    placeholder={`Add ${type.slice(0,-1)}…`}
+                    className="flex-1 px-2 py-1.5 rounded border border-border bg-surface2 text-xs focus:outline-none" />
+                  <button type="button" onClick={() => addEntry(openItem, type)}
+                    className="px-3 py-1.5 rounded bg-done/90 text-white text-xs">Add</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 interface Props {
   milestones: AppState['milestones'];
@@ -523,9 +703,12 @@ interface Props {
 }
 
 export function DesignPipeline({ milestones, onStateChange, currentUser = 'Operator' }: Props) {
-  const [renaming,   setRenaming]  = useState<string | null>(null);
-  const [editingMs,  setEditingMs] = useState<Milestone | null>(null);
-  const [selectedMs, setSelected]  = useState<Milestone | null>(null);
+  const [renaming,     setRenaming]    = useState<string | null>(null);
+  const [editingMs,    setEditingMs]   = useState<Milestone | null>(null);
+  const [selectedMs,   setSelected]    = useState<Milestone | null>(null);
+  const [responsibles, setResponsibles] = useState<Responsible[]>([]);
+
+  useEffect(() => { api.getResponsibles().then(d => setResponsibles(d.responsibles || [])); }, []);
 
   const projects = [...new Set(milestones.map((m) => m.project))].sort();
 
@@ -660,8 +843,11 @@ export function DesignPipeline({ milestones, onStateChange, currentUser = 'Opera
             </div>
 
             {/* Notes/Comments/Agreements */}
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <NotesPanel ms={selectedMs} currentUser={currentUser} />
+              <div className="px-4 pb-4">
+                <PhaseItemsPanel project={selectedMs.project} phase={selectedMs.phase} responsibles={responsibles} />
+              </div>
             </div>
           </div>
         )}

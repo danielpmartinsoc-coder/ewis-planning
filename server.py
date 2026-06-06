@@ -1073,6 +1073,197 @@ def spa(path: str):
     return send_from_directory(_DIST, "index.html")
 
 
+# ── Responsibles ──────────────────────────────────────────────────────────────
+
+_RESP_PATH = _HERE / "data" / "responsibles.json"
+
+def _load_responsibles() -> dict:
+    if _RESP_PATH.exists():
+        try:
+            return json.loads(_RESP_PATH.read_text("utf-8"))
+        except Exception:
+            pass
+    return {"responsibles": []}
+
+def _save_responsibles(data: dict) -> None:
+    _RESP_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+
+@app.route("/api/responsibles", methods=["GET"])
+def api_get_responsibles():
+    return jsonify(_load_responsibles())
+
+@app.route("/api/responsibles", methods=["POST"])
+def api_create_responsible():
+    """Only callable by AI chat — enforced by convention, not auth."""
+    d = request.get_json() or {}
+    name = (d.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "name required"}), 400
+    data = _load_responsibles()
+    new_id = "R-" + str(uuid.uuid4())[:6].upper()
+    data["responsibles"].append({
+        "id": new_id,
+        "name": name,
+        "role": d.get("role", ""),
+        "active": True,
+    })
+    _save_responsibles(data)
+    return jsonify({"ok": True, "id": new_id})
+
+@app.route("/api/responsibles/<rid>", methods=["PUT"])
+def api_update_responsible(rid):
+    d = request.get_json() or {}
+    data = _load_responsibles()
+    for r in data["responsibles"]:
+        if r["id"] == rid:
+            for k in ("name", "role", "active"):
+                if k in d:
+                    r[k] = d[k]
+            break
+    _save_responsibles(data)
+    return jsonify({"ok": True})
+
+@app.route("/api/responsibles/<rid>", methods=["DELETE"])
+def api_delete_responsible(rid):
+    data = _load_responsibles()
+    for r in data["responsibles"]:
+        if r["id"] == rid:
+            r["active"] = False
+            break
+    _save_responsibles(data)
+    return jsonify({"ok": True})
+
+# ── Phase Items ───────────────────────────────────────────────────────────────
+
+_PI_PATH = _HERE / "data" / "phase_items.json"
+
+def _load_pi() -> dict:
+    if _PI_PATH.exists():
+        try:
+            return json.loads(_PI_PATH.read_text("utf-8"))
+        except Exception:
+            pass
+    return {"items": []}
+
+def _save_pi(data: dict) -> None:
+    _PI_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+
+@app.route("/api/phase-items/<project>/<phase>", methods=["GET"])
+def api_get_phase_items(project, phase):
+    data = _load_pi()
+    items = [i for i in data["items"] if i["project"] == project and i["phase"] == phase]
+    return jsonify({"items": items})
+
+@app.route("/api/phase-items/<project>/<phase>", methods=["POST"])
+def api_create_phase_item(project, phase):
+    d = request.get_json() or {}
+    title = (d.get("title") or "").strip()
+    if not title:
+        return jsonify({"ok": False, "error": "title required"}), 400
+    data = _load_pi()
+    item = {
+        "id": "PI-" + str(uuid.uuid4())[:8].upper(),
+        "project": project,
+        "phase": phase,
+        "title": title,
+        "itemType": d.get("itemType", "task"),
+        "status": "open",
+        "responsibleId": d.get("responsibleId", ""),
+        "dueDate": d.get("dueDate"),
+        "notes": [],
+        "comments": [],
+        "agreements": [],
+        "createdAt": date.today().isoformat(),
+    }
+    data["items"].append(item)
+    _save_pi(data)
+    return jsonify({"ok": True, "item": item})
+
+@app.route("/api/phase-items/<item_id>", methods=["PUT"])
+def api_update_phase_item(item_id):
+    d = request.get_json() or {}
+    data = _load_pi()
+    for item in data["items"]:
+        if item["id"] == item_id:
+            for k in ("title", "itemType", "status", "responsibleId", "dueDate"):
+                if k in d:
+                    item[k] = d[k]
+            break
+    _save_pi(data)
+    return jsonify({"ok": True})
+
+@app.route("/api/phase-items/<item_id>", methods=["DELETE"])
+def api_delete_phase_item(item_id):
+    data = _load_pi()
+    data["items"] = [i for i in data["items"] if i["id"] != item_id]
+    _save_pi(data)
+    return jsonify({"ok": True})
+
+@app.route("/api/phase-items/<item_id>/<entry_type>", methods=["POST"])
+def api_add_phase_item_entry(item_id, entry_type):
+    if entry_type not in ("notes", "comments", "agreements"):
+        return jsonify({"ok": False, "error": "invalid entry_type"}), 400
+    d = request.get_json() or {}
+    body = (d.get("body") or "").strip()
+    if not body:
+        return jsonify({"ok": False, "error": "body required"}), 400
+    data = _load_pi()
+    entry = {
+        "id": str(uuid.uuid4())[:8],
+        "body": body,
+        "author": d.get("author", ""),
+        "createdAt": date.today().isoformat(),
+    }
+    if entry_type == "agreements":
+        entry["agreedBy"] = d.get("agreedBy", "")
+        entry["entryStatus"] = d.get("entryStatus", "agreed")
+    for item in data["items"]:
+        if item["id"] == item_id:
+            item.setdefault(entry_type, []).append(entry)
+            break
+    _save_pi(data)
+    return jsonify({"ok": True, "entry": entry})
+
+@app.route("/api/phase-items/<item_id>/<entry_type>/<entry_id>", methods=["DELETE"])
+def api_delete_phase_item_entry(item_id, entry_type, entry_id):
+    if entry_type not in ("notes", "comments", "agreements"):
+        return jsonify({"ok": False, "error": "invalid entry_type"}), 400
+    data = _load_pi()
+    for item in data["items"]:
+        if item["id"] == item_id:
+            item[entry_type] = [e for e in item.get(entry_type, []) if e["id"] != entry_id]
+            break
+    _save_pi(data)
+    return jsonify({"ok": True})
+
+# ── Work Order Steps (time tracking) ─────────────────────────────────────────
+
+@app.route("/api/work-orders/<wo_id>/steps/<step_id>/complete", methods=["POST"])
+def api_complete_wo_step(wo_id, step_id):
+    d = request.get_json() or {}
+    actual_hours = float(d.get("actualHours", 0))
+    completed_by = d.get("completedBy", "")
+    notes = d.get("notes", "")
+    data = _load_work_orders()
+    wo = next((o for o in data["orders"] if o["id"] == wo_id), None)
+    if not wo:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    for step in wo.get("steps", []):
+        if step["id"] == step_id:
+            step["status"] = "done"
+            step["actualHours"] = actual_hours
+            step["completedBy"] = completed_by
+            step["completedAt"] = date.today().isoformat()
+            step["notes"] = notes
+            break
+    # Recalculate total actual hours
+    wo["actualHours"] = sum(s.get("actualHours", 0) for s in wo.get("steps", []))
+    pending = [s for s in wo.get("steps", []) if s["status"] not in ("done", "skipped")]
+    if not pending:
+        wo["status"] = "complete"
+    _save_work_orders(data)
+    return jsonify({"ok": True, "actualHours": wo["actualHours"], "woStatus": wo["status"]})
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

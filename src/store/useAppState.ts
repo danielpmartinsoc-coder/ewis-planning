@@ -48,9 +48,9 @@ export function useAppState() {
 
   // ── Direct UI actions ─────────────────────────────────────────────────────
 
-  const advanceStage = useCallback(async (harnessId: string, reason: string) => {
+  const advanceStage = useCallback(async (harnessId: string, reason: string, actualHours = 0) => {
     if (backendStatus === 'online') {
-      const r = await api.directUpdate('advance_stage', { harness_id: harnessId, reason });
+      const r = await api.directUpdate('advance_stage', { harness_id: harnessId, reason, actualHours });
       if (r.ok && r.state) { setState(r.state); localSave(r.state); }
     } else {
       setState((prev) => {

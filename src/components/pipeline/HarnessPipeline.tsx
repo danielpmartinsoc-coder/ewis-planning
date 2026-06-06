@@ -11,7 +11,7 @@ import * as api from '../../api';
 interface Props {
   harnesses: Harness[];
   currentUser: string;
-  onAdvanceStage: (id: string, reason: string) => void;
+  onAdvanceStage: (id: string, reason: string, actualHours?: number) => void;
   onRegressStage: (id: string, reason: string) => void;
   onRegisterBlock: (id: string, reason: string, responsible: string) => void;
   onResolveBlock: (id: string, note: string) => void;
@@ -32,8 +32,13 @@ function EditHarnessModal({ harness, onSave, onClose }: {
   const [plannedEnd,   setPE]          = useState(harness.plannedEnd   ?? '');
   const [actualStart,  setAS]          = useState(harness.actualStart  ?? '');
   const [actualEnd,    setAE]          = useState(harness.actualEnd    ?? '');
+  const [responsibles, setResponsibles] = useState<import('../../types').Responsible[]>([]);
   const [busy,         setBusy]        = useState(false);
   const [err,          setErr]         = useState('');
+
+  useEffect(() => {
+    api.getResponsibles().then(d => setResponsibles(d.responsibles || []));
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -68,8 +73,13 @@ function EditHarnessModal({ harness, onSave, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Responsible</label>
-              <input value={responsible} onChange={(e) => setResponsible(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none focus:border-accent/60" />
+              <select value={responsible} onChange={(e) => setResponsible(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none focus:border-accent/60">
+                <option value="">— select —</option>
+                {responsibles.filter(r => r.active).map(r => (
+                  <option key={r.id} value={r.name}>{r.name} ({r.role})</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Revision</label>
@@ -178,9 +188,9 @@ export function HarnessPipeline({
       setSelected(harness);
   }
 
-  function confirmMove(reason: string) {
+  function confirmMove(reason: string, actualHours?: number) {
     if (!moveTarget) return;
-    if (moveTarget.direction === 'advance') onAdvanceStage(moveTarget.harness.id, reason);
+    if (moveTarget.direction === 'advance') onAdvanceStage(moveTarget.harness.id, reason, actualHours);
     else onRegressStage(moveTarget.harness.id, reason);
     setMoveTarget(null);
   }

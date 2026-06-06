@@ -35,6 +35,8 @@ function WOForm({ harnesses, initial, onSave, onClose }: WOFormProps) {
   const [checking,  setChecking]  = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [error,     setError]     = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+  const [expHours,  setExpHours]  = useState(initial?.expectedHours ?? 0);
 
   const projects = [...new Set(harnesses.map((h) => h.project))];
 
@@ -69,7 +71,7 @@ function WOForm({ harnesses, initial, onSave, onClose }: WOFormProps) {
     if (!number.trim()) { setError('WO number is required.'); return; }
     setSaving(true); setError('');
     try {
-      await onSave({ number: number.trim(), project, harnessId: hid, description: desc, bomItems: analysed, totalCost: analysed.reduce((s, b) => s + b.subtotal, 0), notes, createdBy: 'Operator' });
+      await onSave({ number: number.trim(), project, harnessId: hid, description: desc, bomItems: analysed, totalCost: analysed.reduce((s, b) => s + b.subtotal, 0), notes, createdBy: 'Operator', expectedHours: expHours, actualHours: 0, steps: [] });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save');
     } finally {
@@ -122,6 +124,12 @@ function WOForm({ harnesses, initial, onSave, onClose }: WOFormProps) {
               <input value={desc} onChange={(e) => setDesc(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none" />
             </div>
+            <div className="col-span-2">
+              <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Expected Hours (total)</label>
+              <input type="number" min="0" step="0.5" value={expHours} onChange={(e) => setExpHours(parseFloat(e.target.value)||0)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none" />
+              <p className="text-[10px] text-dim mt-1">Total expected assembly hours for this work order</p>
+            </div>
 
             {/* BOM section */}
             <div className="col-span-2">
@@ -135,6 +143,29 @@ function WOForm({ harnesses, initial, onSave, onClose }: WOFormProps) {
                 className="mt-2 px-4 py-1.5 rounded-lg border border-border bg-surface2 text-xs text-mid font-medium hover:bg-surface3 disabled:opacity-50">
                 {checking ? 'Checking stock…' : '🔍 Check inventory & costs'}
               </button>
+              <button type="button" onClick={() => setShowPicker(true)}
+                className="mt-2 ml-2 px-4 py-1.5 rounded-lg border border-border bg-surface2 text-xs text-mid font-medium hover:bg-surface3">
+                📦 Pick from Inventory
+              </button>
+              {showPicker && (
+                <div className="mt-2 border border-border rounded-lg bg-surface2 p-3 max-h-48 overflow-y-auto">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono text-dim uppercase tracking-wider">Pick from inventory</span>
+                    <button type="button" onClick={() => setShowPicker(false)} className="text-dim hover:text-text text-sm">×</button>
+                  </div>
+                  {inventory.filter(i => i.quantity > i.reserved).map(inv => (
+                    <div key={inv.id} className="flex items-center justify-between py-1 border-b border-border/30 text-[11px] cursor-pointer hover:bg-surface3 px-2 rounded"
+                      onClick={() => {
+                        setBomText(prev => prev ? prev + '\n' + inv.partNumber + '\t1\t' + inv.unit + '\t' + inv.description : inv.partNumber + '\t1\t' + inv.unit + '\t' + inv.description);
+                        setShowPicker(false);
+                      }}>
+                      <span className="font-mono font-semibold text-done">{inv.partNumber}</span>
+                      <span className="text-dim flex-1 mx-3 truncate">{inv.description}</span>
+                      <span className="font-mono text-dim">{inv.quantity - inv.reserved} {inv.unit} avail</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Analysed BOM */}
@@ -203,6 +234,7 @@ function WODetail({ wo, onClose, onStatusChange, onEdit }: { wo: WorkOrder; onCl
             <div className="font-mono text-xl font-extrabold text-done">{wo.number}</div>
             <div className="text-sm text-mid mt-0.5">{wo.description}</div>
             <div className="text-xs text-dim mt-1">{wo.project} {wo.harnessId && `· ${wo.harnessId}`} · Created {wo.createdAt} by {wo.createdBy}</div>
+            <div className="text-xs text-dim mt-0.5">Hours: <b>{wo.actualHours?.toFixed(1)||'0'}h / {wo.expectedHours?.toFixed(1)||'0'}h</b></div>
           </div>
           <div className="flex gap-2 items-start">
             <button onClick={onEdit}
@@ -251,6 +283,29 @@ function WODetail({ wo, onClose, onStatusChange, onEdit }: { wo: WorkOrder; onCl
             </tbody>
           </table>
         </div>
+        {wo.steps && wo.steps.length > 0 && (
+          <div className="bg-surface2 rounded-xl border border-border overflow-hidden mb-4">
+            <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+              <span className="text-sm font-semibold text-text">Assembly Steps</span>
+              <span className="font-mono text-xs text-dim">{wo.actualHours?.toFixed(1)||'0.0'}h actual / {wo.expectedHours?.toFixed(1)||'0.0'}h expected</span>
+            </div>
+            <div className="divide-y divide-border/40">
+              {wo.steps.map((step) => (
+                <div key={step.id} className="px-4 py-2.5 flex items-center gap-4 text-[11px]">
+                  <span className={step.status === 'done' ? 'text-ok font-bold' : step.status === 'in_progress' ? 'text-risk font-bold' : 'text-dim'}>
+                    {step.status === 'done' ? '✓' : step.status === 'in_progress' ? '▶' : '○'}
+                  </span>
+                  <span className="flex-1 font-medium text-text">{step.stageName}</span>
+                  <span className="font-mono text-dim">{step.actualHours?.toFixed(1)||'—'}h actual</span>
+                  <span className="font-mono text-dim">/ {step.expectedHours?.toFixed(1)||'0.0'}h exp</span>
+                  {step.status === 'done' && step.completedBy && (
+                    <span className="text-dim text-[10px]">{step.completedBy} · {step.completedAt}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {wo.notes && <p className="text-xs text-mid bg-surface2 rounded-lg px-4 py-3 border border-border">{wo.notes}</p>}
       </div>
     </div>

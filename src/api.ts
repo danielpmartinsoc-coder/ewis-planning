@@ -339,3 +339,76 @@ export async function deleteProcDocument(id: string): Promise<{ ok: boolean; err
 export async function getAIInsights(): Promise<{ ok: boolean; insights: AIInsight[]; generatedAt: string }> {
   return _get('/ai/insights');
 }
+
+// ── Responsibles ─────────────────────────────────────────────────────────────
+
+export async function getResponsibles(): Promise<{ responsibles: import('./types').Responsible[] }> {
+  return _get('/responsibles');
+}
+
+export async function createResponsible(
+  data: { name: string; role: string }
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  return _post('/responsibles', data);
+}
+
+export async function updateResponsible(
+  id: string, updates: Partial<{ name: string; role: string; active: boolean }>
+): Promise<{ ok: boolean }> {
+  return _put(`/responsibles/${id}`, updates);
+}
+
+export async function deleteResponsible(id: string): Promise<{ ok: boolean }> {
+  return _delete(`/responsibles/${id}`);
+}
+
+// ── Phase Items ───────────────────────────────────────────────────────────────
+
+export async function getPhaseItems(
+  project: string, phase: string
+): Promise<{ items: import('./types').PhaseItem[] }> {
+  return _get(`/phase-items/${encodeURIComponent(project)}/${encodeURIComponent(phase)}`);
+}
+
+export async function createPhaseItem(
+  project: string, phase: string,
+  data: { title: string; itemType: string; responsibleId: string; dueDate?: string | null }
+): Promise<{ ok: boolean; item?: import('./types').PhaseItem; error?: string }> {
+  return _post(`/phase-items/${encodeURIComponent(project)}/${encodeURIComponent(phase)}`, data);
+}
+
+export async function updatePhaseItem(
+  id: string,
+  updates: Partial<{ title: string; itemType: string; status: string; responsibleId: string; dueDate: string | null }>
+): Promise<{ ok: boolean }> {
+  return _put(`/phase-items/${id}`, updates);
+}
+
+export async function deletePhaseItem(id: string): Promise<{ ok: boolean }> {
+  return _delete(`/phase-items/${id}`);
+}
+
+export async function addPhaseItemEntry(
+  itemId: string,
+  entryType: 'notes' | 'comments' | 'agreements',
+  data: { body: string; author: string; agreedBy?: string; entryStatus?: string }
+): Promise<{ ok: boolean; entry?: import('./types').PhaseItemEntry }> {
+  return _post(`/phase-items/${itemId}/${entryType}`, data);
+}
+
+export async function deletePhaseItemEntry(
+  itemId: string,
+  entryType: 'notes' | 'comments' | 'agreements',
+  entryId: string
+): Promise<{ ok: boolean }> {
+  return _delete(`/phase-items/${itemId}/${entryType}/${entryId}`);
+}
+
+// ── WO Step completion ────────────────────────────────────────────────────────
+
+export async function completeWOStep(
+  woId: string, stepId: string,
+  data: { actualHours: number; completedBy: string; notes?: string }
+): Promise<{ ok: boolean; actualHours?: number; woStatus?: string; error?: string }> {
+  return _post(`/work-orders/${woId}/steps/${stepId}/complete`, data);
+}

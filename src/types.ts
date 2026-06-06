@@ -64,6 +64,8 @@ export interface Milestone {
   planned: string;
   actual: string | null;
   status: MilestoneStatus;
+  responsibleId?: string;
+  dueDate?:       string | null;
 }
 
 export interface Allocation {
@@ -156,6 +158,9 @@ export interface WorkOrder {
   bomItems: WOBomItem[];
   totalCost: number;
   notes: string;
+  expectedHours: number;
+  actualHours:   number;
+  steps:         WOStep[];
 }
 
 // ── Procurement (PR/PO) ───────────────────────────────────────────────────────
@@ -189,4 +194,54 @@ export interface AIInsight {
   title: string;
   detail: string;
   source: 'rule' | 'llm';
+}
+
+// ── Responsibles ──────────────────────────────────────────────────────────────
+export interface Responsible {
+  id: string;
+  name: string;
+  role: string;
+  active: boolean;
+}
+
+// ── Phase Items (deliverables within design phases) ───────────────────────────
+export type PhaseItemType   = 'diagram' | 'spec' | 'document' | 'checklist' | 'task' | 'other';
+export type PhaseItemStatus = 'open' | 'in_progress' | 'review' | 'done' | 'blocked';
+
+export interface PhaseItemEntry {
+  id: string;
+  body: string;
+  author: string;
+  createdAt: string;
+  agreedBy?: string;
+  entryStatus?: 'pending' | 'agreed' | 'rejected';
+}
+
+export interface PhaseItem {
+  id: string;
+  project: string;
+  phase: string;
+  title: string;
+  itemType: PhaseItemType;
+  status: PhaseItemStatus;
+  responsibleId: string;
+  dueDate: string | null;
+  notes: PhaseItemEntry[];
+  comments: PhaseItemEntry[];
+  agreements: PhaseItemEntry[];
+  createdAt: string;
+}
+
+// ── Work Order Steps (time tracking per stage) ────────────────────────────────
+export type WOStepStatus = 'pending' | 'in_progress' | 'done' | 'skipped';
+
+export interface WOStep {
+  id: string;
+  stageName: string;
+  status: WOStepStatus;
+  expectedHours: number;
+  actualHours: number;
+  completedBy: string;
+  completedAt: string | null;
+  notes: string;
 }
