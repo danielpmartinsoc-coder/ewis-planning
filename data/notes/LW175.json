@@ -1,0 +1,56 @@
+[
+  {
+    "id": "441cb93d-da1e",
+    "timestamp": "2026-06-09T16:14:13.604861",
+    "author": "system",
+    "text": "Moved to next step.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 0
+  },
+  {
+    "id": "d2b6caff-38f0",
+    "timestamp": "2026-06-09T16:14:40.839194",
+    "author": "system",
+    "text": "Moved to next step.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 1
+  },
+  {
+    "id": "e9696b8b-0c55",
+    "timestamp": "2026-06-09T16:14:48.180592",
+    "author": "system",
+    "text": "Moved to next step.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 2
+  },
+  {
+    "id": "ad02e6d3-79f9",
+    "timestamp": "2026-06-09T16:14:53.372590",
+    "author": "system",
+    "text": "Moved to next step.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 3
+  },
+  {
+    "id": "29b66f7d-c628",
+    "timestamp": "2026-06-09T16:15:09.368597",
+    "author": "system",
+    "text": "Moved to next step.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 4
+  },
+  {
+    "id": "d6928781-8749",
+    "timestamp": "2026-06-09T16:15:21.755338",
+    "author": "system",
+    "text": "Moved to next step.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 5
+  }
+]

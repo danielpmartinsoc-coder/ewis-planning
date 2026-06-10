@@ -1,0 +1,65 @@
+[
+  {
+    "id": "41ead503-17d1",
+    "timestamp": "2026-06-08T10:41:29.723171",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 0
+  },
+  {
+    "id": "14fb09d3-9f2b",
+    "timestamp": "2026-06-08T10:41:34.485039",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 1
+  },
+  {
+    "id": "8eb45d20-b432",
+    "timestamp": "2026-06-08T10:41:38.154037",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 2
+  },
+  {
+    "id": "477d169f-8a1f",
+    "timestamp": "2026-06-08T10:41:42.690321",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 3
+  },
+  {
+    "id": "0de8cc56-9ca8",
+    "timestamp": "2026-06-08T10:41:47.790799",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 4
+  },
+  {
+    "id": "de348454-3959",
+    "timestamp": "2026-06-08T10:41:52.401034",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 5
+  },
+  {
+    "id": "e78a95e6-c214",
+    "timestamp": "2026-06-08T10:41:56.866790",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 6
+  }
+]

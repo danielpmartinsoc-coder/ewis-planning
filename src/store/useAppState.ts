@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { AppState, Harness, HarnessNote } from '../types';
 import { initialState } from '../data/mockData';
 import * as api from '../api';
@@ -45,6 +45,26 @@ export function useAppState() {
     api.getState().then((s) => { setState(s); localSave(s); }).catch(() => {});
     api.getDraftStatus().then(setDraft).catch(() => {});
   }, []);
+
+  // Poll /api/state/version every 5 s; refresh full state only when it changes.
+  const versionRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (backendStatus !== 'online') return;
+    const tick = () => {
+      fetch('/api/state/version')
+        .then(r => r.json())
+        .then((d: { version: number }) => {
+          if (versionRef.current !== null && d.version !== versionRef.current) {
+            refreshState();
+          }
+          versionRef.current = d.version;
+        })
+        .catch(() => {});
+    };
+    tick();                            // immediate baseline on mount
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, [backendStatus, refreshState]);
 
   // ── Direct UI actions ─────────────────────────────────────────────────────
 

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import type { Harness, HarnessNote } from '../../types';
+import { useReadonly } from '../../context/ReadonlyContext';
+import type { Harness, HarnessNote, DelayEvent } from '../../types';
 import { addDays, isoDate, startOfMonth, datePct, buildTicks, ZOOM_ORDER, ZOOM_LABELS, ZOOM_SPAN_DAYS, MONTHS } from '../../utils/dates';
 import type { ZoomLevel } from '../../utils/dates';
 import { STAGES } from '../../types';
 import { BlockPanel } from './BlockPanel';
 import { StageMoveDialog } from './StageMoveDialog';
 import { HarnessNotes } from './HarnessNotes';
+import { DelayEventsBar } from '../events/DelayEventsBar';
 import * as api from '../../api';
 
 interface Props {
@@ -17,6 +19,7 @@ interface Props {
   onResolveBlock: (id: string, note: string) => void;
   onAddNote: (harnessId: string, author: string, text: string, attachments: HarnessNote['attachments']) => void;
   onStateChange?: () => void;
+  onCreateHarness?: (project: string) => void;
 }
 
 // ── Edit Harness modal ────────────────────────────────────────────────────────
@@ -25,9 +28,10 @@ function EditHarnessModal({ harness, onSave, onClose }: {
   onSave: () => void;
   onClose: () => void;
 }) {
-  const [name,         setName]        = useState(harness.name);
-  const [responsible,  setResponsible] = useState(harness.responsible ?? '');
-  const [revision,     setRevision]    = useState(harness.revision);
+  const [name,              setName]             = useState(harness.name);
+  const [responsible,       setResponsible]      = useState(harness.responsible ?? '');
+  const [designResponsible, setDesignResponsible]= useState(harness.designResponsible ?? '');
+  const [revision,          setRevision]         = useState(harness.revision);
   const [plannedStart, setPS]          = useState(harness.plannedStart ?? '');
   const [plannedEnd,   setPE]          = useState(harness.plannedEnd   ?? '');
   const [actualStart,  setAS]          = useState(harness.actualStart  ?? '');
@@ -44,7 +48,7 @@ function EditHarnessModal({ harness, onSave, onClose }: {
     e.preventDefault();
     setBusy(true);
     const res = await api.updateHarness(harness.id, {
-      name: name.trim(), responsible: responsible.trim(), revision: revision.trim(),
+      name: name.trim(), responsible: responsible.trim(), designResponsible: designResponsible.trim(), revision: revision.trim(),
       plannedStart: plannedStart || undefined, plannedEnd: plannedEnd || undefined,
       actualStart:  actualStart  || undefined, actualEnd:  actualEnd  || undefined,
     });
@@ -72,20 +76,30 @@ function EditHarnessModal({ harness, onSave, onClose }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Responsible</label>
-              <select value={responsible} onChange={(e) => setResponsible(e.target.value)}
+              <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Design Engineer</label>
+              <select value={designResponsible} onChange={(e) => setDesignResponsible(e.target.value)}
                 className="w-full px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none focus:border-accent/60">
                 <option value="">— select —</option>
                 {responsibles.filter(r => r.active).map(r => (
-                  <option key={r.id} value={r.name}>{r.name} ({r.role})</option>
+                  <option key={r.id} value={r.name}>{r.name}{r.role ? ` · ${r.role}` : ''}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Revision</label>
-              <input value={revision} onChange={(e) => setRevision(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none focus:border-accent/60" />
+              <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Production Operator</label>
+              <select value={responsible} onChange={(e) => setResponsible(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none focus:border-accent/60">
+                <option value="">— select —</option>
+                {responsibles.filter(r => r.active).map(r => (
+                  <option key={r.id} value={r.name}>{r.name}{r.role ? ` · ${r.role}` : ''}</option>
+                ))}
+              </select>
             </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-mono text-dim uppercase tracking-wider block mb-1">Revision</label>
+            <input value={revision} onChange={(e) => setRevision(e.target.value)}
+              className="w-full px-3 py-1.5 rounded-lg border border-border bg-bg text-sm text-text focus:outline-none focus:border-accent/60" />
           </div>
           <div className="border-t border-border/50 pt-3">
             <p className="text-[10px] font-mono text-dim uppercase tracking-wider mb-2">Schedule</p>
@@ -135,21 +149,30 @@ interface MoveTarget { harness: Harness; direction: 'advance' | 'back' }
 export function HarnessPipeline({
   harnesses, currentUser,
   onAdvanceStage, onRegressStage, onRegisterBlock, onResolveBlock, onAddNote,
-  onStateChange,
+  onStateChange, onCreateHarness,
 }: Props) {
   // Derive projects dynamically from the harnesses prop
   const projects = [...new Set(harnesses.map((h) => h.project))].sort();
   const projIndex = Object.fromEntries(projects.map((p, i) => [p, i]));
 
   const [filter, setFilter]            = useState<Filter>('ALL');
+  const [stageFilter, setStageFilter]  = useState<number | 'ALL'>('ALL');
   const [viewMode, setViewMode]        = useState<'stage' | 'gantt'>('stage');
   const [selectedHarness, setSelected] = useState<Harness | null>(null);
   const [moveTarget, setMoveTarget]    = useState<MoveTarget | null>(null);
   const [notesHarness, setNotesH]      = useState<Harness | null>(null);
   const [editHarness,   setEditH]      = useState<Harness | null>(null);
+  const [hoursHarness,  setHoursH]     = useState<Harness | null>(null);
   const [search, setSearch]            = useState('');
   const [onlyBlocked, setOnlyBlocked]  = useState(false);
   const [page, setPage]                = useState(0);
+  const [delayEvents, setDelayEvents]  = useState<DelayEvent[]>([]);
+
+  async function loadEvents() {
+    const d = await api.getEvents();
+    setDelayEvents(d.events ?? []);
+  }
+  useEffect(() => { loadEvents(); }, []);
   const PAGE_SIZE = 100;
 
   const filters: Filter[] = ['ALL', ...projects];
@@ -163,7 +186,10 @@ export function HarnessPipeline({
       (h.responsible ?? '').toLowerCase().includes(q));
 
   const visibleSet = new Set<string>(visibleProjects);
-  const filteredHarnesses = harnesses.filter((h) => visibleSet.has(h.project) && matches(h));
+  const filteredHarnesses = harnesses.filter(
+    (h) => visibleSet.has(h.project) && matches(h) &&
+           (stageFilter === 'ALL' || h.stage === stageFilter)
+  );
   const totalFiltered = filteredHarnesses.length;
   const pageCount = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
@@ -171,7 +197,7 @@ export function HarnessPipeline({
   const pageHarnesses = filteredHarnesses.slice(pageStart, pageStart + PAGE_SIZE);
 
   // Reset to first page whenever the active filters change
-  useEffect(() => { setPage(0); }, [filter, search, onlyBlocked]);
+  useEffect(() => { setPage(0); }, [filter, stageFilter, search, onlyBlocked]);
 
   // Group the current page's rows by project (preserves project headers)
   const pageByProject = visibleProjects
@@ -197,8 +223,8 @@ export function HarnessPipeline({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Sub-header */}
-      <div className="flex items-center gap-3 px-5 py-2 border-b border-border bg-surface/70 shrink-0">
+      {/* Row 1: title + search + controls */}
+      <div className="flex items-center gap-3 px-5 py-2 border-b border-border/60 bg-surface/70 shrink-0">
         <div className="shrink-0">
           <h1 className="font-semibold text-text text-sm tracking-tight">Production Pipeline</h1>
           <p className="text-[10px] text-dim mt-0.5 font-mono">
@@ -207,12 +233,12 @@ export function HarnessPipeline({
         </div>
 
         {/* Search */}
-        <div className="relative ml-4 w-64">
+        <div className="relative ml-4 w-56">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dim text-xs">⌕</span>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ID, name, responsible…"
+            placeholder="ID, name, responsible…"
             className="w-full pl-7 pr-3 py-1.5 rounded-md bg-surface2 border border-border/60 text-xs text-text placeholder-dim focus:outline-none focus:border-accent/50 font-mono"
           />
           {search && (
@@ -242,25 +268,67 @@ export function HarnessPipeline({
             </button>
           ))}
         </div>
+      </div>
 
-        <div className="flex gap-1">
-          {filters.map((f) => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all ${
-                filter === f
-                  ? 'bg-done/12 border border-done/35 text-done'
+      {/* Row 2: Programme filter */}
+      <div className="flex items-center gap-1.5 px-5 py-1.5 border-b border-border/60 bg-surface/60 shrink-0 overflow-x-auto">
+        <span className="text-[9px] font-mono text-dim uppercase tracking-widest mr-1 shrink-0">Programme</span>
+        {filters.map((f) => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all shrink-0 ${
+              filter === f
+                ? 'bg-done/12 border border-done/35 text-done'
+                : 'border border-border/60 text-dim hover:text-mid hover:border-mid/30'
+            }`}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Row 3: Stage filter */}
+      <div className="flex items-center gap-1.5 px-5 py-1.5 border-b border-border bg-surface/50 shrink-0 overflow-x-auto">
+        <span className="text-[9px] font-mono text-dim uppercase tracking-widest mr-1 shrink-0">Stage</span>
+        <button
+          onClick={() => setStageFilter('ALL')}
+          className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all shrink-0 ${
+            stageFilter === 'ALL'
+              ? 'bg-done/12 border border-done/35 text-done'
+              : 'border border-border/60 text-dim hover:text-mid hover:border-mid/30'
+          }`}
+        >
+          ALL
+        </button>
+        {STAGES.map((name, idx) => {
+          const count = harnesses.filter(
+            (h) => h.stage === idx &&
+                   (filter === 'ALL' || h.project === filter)
+          ).length;
+          return (
+            <button
+              key={idx}
+              onClick={() => setStageFilter(stageFilter === idx ? 'ALL' : idx)}
+              className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold tracking-wider transition-all shrink-0 flex items-center gap-1.5 ${
+                stageFilter === idx
+                  ? 'bg-accent/12 border border-accent/40 text-accent'
                   : 'border border-border/60 text-dim hover:text-mid hover:border-mid/30'
-              }`}>
-              {f}
+              }`}
+            >
+              <span>{name}</span>
+              {count > 0 && (
+                <span className={`text-[9px] px-1 rounded-full font-bold ${
+                  stageFilter === idx ? 'bg-accent/20 text-accent' : 'bg-surface2 text-dim'
+                }`}>{count}</span>
+              )}
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       <div className="flex-1 overflow-auto">
         {/* ── Gantt / Schedule view ── */}
         {viewMode === 'gantt' && (
-          <GanttView harnesses={filteredHarnesses} onEditClick={setEditH} />
+          <GanttView harnesses={filteredHarnesses} onEditClick={setEditH}
+            delayEvents={delayEvents} projects={projects} onEventsRefresh={loadEvents} />
         )}
 
         {/* ── Stage grid view ── */}
@@ -291,7 +359,16 @@ export function HarnessPipeline({
                     colSpan={STAGES.length + 2}
                     className={`px-4 py-1 border-b border-border font-mono text-[10px] font-bold tracking-widest border-l-2 ${projHdr(projIndex[proj] ?? 0)}`}
                   >
-                    {proj} <span className="text-dim/50 font-normal">· {rows.length}</span>
+                    <div className="flex items-center gap-2">
+                      <span>{proj}</span>
+                      <span className="text-dim/50 font-normal">· {rows.length} harness{rows.length !== 1 ? 'es' : ''}</span>
+                      {onCreateHarness && (
+                        <button
+                          onClick={() => onCreateHarness(proj)}
+                          className="ml-auto px-2 py-0.5 rounded border border-border text-[9px] font-mono text-dim hover:text-done hover:border-done/40 transition-colors font-normal"
+                        >+ Harness</button>
+                      )}
+                    </div>
                   </td>
                 </tr>,
                 ...rows.map((harness) => (
@@ -302,6 +379,13 @@ export function HarnessPipeline({
                     onInfoClick={() => setSelected(harness)}
                     onNotesClick={() => setNotesH(harness)}
                     onEditClick={() => setEditH(harness)}
+                    onHoursClick={(h) => setHoursH(h)}
+                    onCompleteClick={async (h) => {
+                      if (!confirm(`Mark harness ${h.id} — ${h.name} as complete? This finalises the harness.`)) return;
+                      const res = await api.completeHarness(h.id);
+                      if (!res.ok) { alert(res.error ?? 'Failed'); return; }
+                      onStateChange?.();
+                    }}
                     onDeleteClick={async () => {
                       if (!confirm(`Delete harness ${harness.id} — ${harness.name}? This cannot be undone.`)) return;
                       const res = await api.deleteHarness(harness.id);
@@ -366,13 +450,22 @@ export function HarnessPipeline({
       {editHarness && (
         <EditHarnessModal harness={editHarness} onSave={() => onStateChange?.()} onClose={() => setEditH(null)} />
       )}
+      {hoursHarness && (
+        <StageHistoryModal harness={hoursHarness} onSaved={() => onStateChange?.()} onClose={() => setHoursH(null)} />
+      )}
     </div>
   );
 }
 
 // ── Gantt / Schedule view ─────────────────────────────────────────────────────
 
-function GanttView({ harnesses, onEditClick }: { harnesses: Harness[]; onEditClick: (h: Harness) => void }) {
+function GanttView({ harnesses, onEditClick, delayEvents = [], projects = [], onEventsRefresh }: {
+  harnesses: Harness[];
+  onEditClick: (h: Harness) => void;
+  delayEvents?: DelayEvent[];
+  projects?: string[];
+  onEventsRefresh?: () => void;
+}) {
   const todayDate = new Date(); todayDate.setHours(0,0,0,0);
   const todayStr  = isoDate(todayDate);
 
@@ -514,6 +607,15 @@ function GanttView({ harnesses, onEditClick }: { harnesses: Harness[]; onEditCli
         <div className="flex-1 relative overflow-x-auto overflow-y-hidden">
           <div className="relative" style={{ minWidth: '100%' }}>
 
+            {/* ── Delay Events Band ── */}
+            <DelayEventsBar
+              events={delayEvents}
+              viewStart={viewStart}
+              viewEnd={viewEnd}
+              projects={projects}
+              onRefresh={onEventsRefresh ?? (() => {})}
+            />
+
             {/* ── Date axis ── */}
             <div className="sticky top-0 z-10 h-10 bg-surface2 border-b border-border relative overflow-hidden">
               {ticks.map((t, i) => (
@@ -626,6 +728,123 @@ function GanttView({ harnesses, onEditClick }: { harnesses: Harness[]; onEditCli
   );
 }
 
+// ── Stage History modal ───────────────────────────────────────────────────────
+function StageHistoryModal({ harness, onClose, onSaved }: {
+  harness: Harness;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  type Entry = import('../../types').StageHistoryEntry;
+  const [rows, setRows] = useState<Entry[]>(() =>
+    harness.stageHistory ? [...harness.stageHistory] : []
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  function update(idx: number, field: keyof Entry, value: string | number) {
+    setRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  }
+
+  function addRow() {
+    setRows((prev) => [...prev, { stage: harness.stage, hours: 0, reason: '', date: new Date().toISOString().slice(0, 10), operator: '' }]);
+  }
+
+  function removeRow(idx: number) {
+    setRows((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function save() {
+    setSaving(true); setErr('');
+    const res = await api.updateStageHistory(harness.id, rows);
+    setSaving(false);
+    if (!res.ok) { setErr(res.error ?? 'Failed'); return; }
+    onSaved();
+    onClose();
+  }
+
+  const totalHours = rows.reduce((s, r) => s + (Number(r.hours) || 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="w-[620px] max-h-[80vh] flex flex-col bg-surface rounded-2xl border border-border shadow-card-md"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <div>
+            <h2 className="font-semibold text-sm text-text">Hours Log — {harness.id}</h2>
+            <p className="text-[10px] text-dim font-mono mt-0.5">{harness.name} · Total: <span className="text-done font-bold">{totalHours.toFixed(1)} h</span></p>
+          </div>
+          <button onClick={onClose} className="text-dim hover:text-text text-xl">×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {rows.length === 0 ? (
+            <p className="text-xs text-dim italic text-center py-8">No entries yet — add one below.</p>
+          ) : (
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="text-[9px] font-mono uppercase tracking-wider text-dim border-b border-border">
+                  <th className="text-left pb-1.5 pr-2">Stage</th>
+                  <th className="text-right pb-1.5 pr-2 w-20">Hours</th>
+                  <th className="text-left pb-1.5 pr-2">Operator</th>
+                  <th className="text-left pb-1.5 pr-2 w-28">Date</th>
+                  <th className="text-left pb-1.5">Notes</th>
+                  <th className="w-6" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    <td className="py-1.5 pr-2">
+                      <select value={r.stage} onChange={(e) => update(i, 'stage', Number(e.target.value))}
+                        className="w-full px-2 py-1 rounded border border-border bg-bg text-xs text-text focus:outline-none">
+                        {STAGES.map((s, si) => <option key={si} value={si}>{si} · {s}</option>)}
+                      </select>
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input type="number" min="0" step="0.5" value={r.hours}
+                        onChange={(e) => update(i, 'hours', parseFloat(e.target.value) || 0)}
+                        className="w-full px-2 py-1 rounded border border-border bg-bg text-xs text-right text-text focus:outline-none" />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input value={r.operator} onChange={(e) => update(i, 'operator', e.target.value)}
+                        placeholder="operator"
+                        className="w-full px-2 py-1 rounded border border-border bg-bg text-xs text-text focus:outline-none" />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input type="date" value={r.date} onChange={(e) => update(i, 'date', e.target.value)}
+                        className="w-full px-2 py-1 rounded border border-border bg-bg text-xs text-text focus:outline-none" />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input value={r.reason} onChange={(e) => update(i, 'reason', e.target.value)}
+                        placeholder="notes…"
+                        className="w-full px-2 py-1 rounded border border-border bg-bg text-xs text-text focus:outline-none" />
+                    </td>
+                    <td className="py-1.5">
+                      <button onClick={() => removeRow(i)} className="text-dim hover:text-blocked text-[11px]">✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="shrink-0 border-t border-border px-5 py-3 bg-surface2 flex items-center gap-3">
+          <button onClick={addRow}
+            className="px-3 py-1.5 rounded-lg border border-border text-xs text-mid hover:text-done hover:border-done/40 transition-colors">
+            + Add entry
+          </button>
+          <div className="flex-1" />
+          {err && <p className="text-xs text-blocked">{err}</p>}
+          <button onClick={onClose} className="px-4 py-1.5 rounded-lg border border-border text-sm text-dim hover:text-mid">Cancel</button>
+          <button onClick={save} disabled={saving}
+            className="px-4 py-1.5 rounded-lg bg-done/90 text-white text-sm font-semibold hover:bg-done disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LegendDot({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -642,10 +861,13 @@ interface HarnessRowProps {
   onNotesClick: () => void;
   onEditClick: () => void;
   onDeleteClick: () => void;
+  onCompleteClick: (h: Harness) => void;
+  onHoursClick: (h: Harness) => void;
 }
 
-function HarnessRow({ harness, onCellClick, onInfoClick, onNotesClick, onEditClick, onDeleteClick }: HarnessRowProps) {
+function HarnessRow({ harness, onCellClick, onInfoClick, onNotesClick, onEditClick, onDeleteClick, onCompleteClick, onHoursClick }: HarnessRowProps) {
   const noteCount = harness.noteCount ?? harness.notes?.length ?? 0;
+  const readonly  = useReadonly();
 
   return (
     <tr className="border-b border-border/40 hover:bg-surface2/60 group transition-colors">
@@ -653,17 +875,35 @@ function HarnessRow({ harness, onCellClick, onInfoClick, onNotesClick, onEditCli
       <td className="relative px-0 py-0 border-r border-border/60">
         <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${harness.blocked ? 'bg-blocked' : 'bg-transparent group-hover:bg-border/60'} transition-colors`} />
         <div className="flex items-center gap-1 pr-2">
-          <button onClick={onInfoClick} className="text-left flex-1 px-4 py-2.5 block">
-            <div className="flex items-center gap-1.5">
+          <button onClick={onInfoClick} className="text-left flex-1 px-4 py-2 block min-w-0">
+            {/* ID row */}
+            <div className="flex items-center gap-1.5 flex-wrap">
               {harness.blocked && <span className="w-1.5 h-1.5 rounded-full bg-blocked shrink-0 animate-pulse" />}
               <span className="font-mono text-xs text-text font-semibold group-hover:text-accent transition-colors">{harness.id}</span>
-            </div>
-            <div className="text-[11px] text-mid mt-0.5 truncate max-w-[120px]">{harness.name}</div>
-            {harness.ecns.length > 0 && (
-              <span className="inline-block mt-0.5 px-1.5 rounded text-[9px] font-mono bg-risk/8 text-risk border border-risk/20">
-                ECN ×{harness.ecns.length}
+              <span className="px-1.5 py-0.5 rounded border font-mono text-[9px] font-bold bg-surface2 border-border text-mid tracking-wider">
+                REV {harness.revision || 'A'}
               </span>
-            )}
+              {harness.ecns.length > 0 && (
+                <span className="px-1.5 rounded text-[9px] font-mono bg-risk/8 text-risk border border-risk/20">
+                  ECN ×{harness.ecns.length}
+                </span>
+              )}
+            </div>
+            {/* Name */}
+            <div className="text-[11px] text-mid mt-0.5 truncate max-w-[140px]">{harness.name}</div>
+            {/* Responsible people */}
+            <div className="flex flex-col gap-0.5 mt-0.5">
+              {harness.designResponsible && (
+                <div className="text-[9px] text-accent/70 font-mono truncate max-w-[140px]">
+                  ✎ {harness.designResponsible}
+                </div>
+              )}
+              {harness.responsible && (
+                <div className="text-[9px] text-dim/70 font-mono truncate max-w-[140px]">
+                  ⚙ {harness.responsible}
+                </div>
+              )}
+            </div>
           </button>
           {/* Inline notes button */}
           <button
@@ -680,10 +920,12 @@ function HarnessRow({ harness, onCellClick, onInfoClick, onNotesClick, onEditCli
               {noteCount > 0 ? (noteCount > 99 ? '99+' : noteCount) : '+'}
             </span>
           </button>
-          {/* Edit / Delete — visible on row hover */}
+          {/* Edit / Hours / Delete — visible on row hover */}
           <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
             <button onClick={onEditClick} title="Edit harness"
               className="w-5 h-5 flex items-center justify-center rounded border border-border text-[10px] text-dim hover:text-done hover:border-done/40 transition-colors">✏</button>
+            <button onClick={() => onHoursClick(harness)} title="Hours log"
+              className="w-5 h-5 flex items-center justify-center rounded border border-border text-[10px] text-dim hover:text-accent hover:border-accent/40 transition-colors">⏱</button>
             <button onClick={onDeleteClick} title="Delete harness"
               className="w-5 h-5 flex items-center justify-center rounded border border-border text-[10px] text-dim hover:text-blocked hover:border-blocked/40 transition-colors">✕</button>
           </div>
@@ -695,9 +937,10 @@ function HarnessRow({ harness, onCellClick, onInfoClick, onNotesClick, onEditCli
         const isPast     = i < harness.stage;
         const isCurrent  = i === harness.stage;
         const isBlocked  = harness.blocked && isCurrent;
-        const canAdvance = !harness.blocked && i === harness.stage + 1 && harness.stage < 7;
-        const canBack    = !harness.blocked && i === harness.stage - 1 && harness.stage > 0;
-        const clickable  = isBlocked || isCurrent || canAdvance || canBack;
+        // Delivered (stage 7) is the final stage; Complete is a status flag, not a stage
+        const canAdvance = !readonly && !harness.blocked && i === harness.stage + 1 && harness.stage < 7 && !harness.completed;
+        const canBack    = !readonly && !harness.blocked && i === harness.stage - 1 && harness.stage > 0;
+        const clickable  = !readonly && (isBlocked || isCurrent || canAdvance || canBack);
 
         const base = 'border-r border-border/30 last:border-r-0 text-center align-middle transition-colors';
         const style = isBlocked  ? 'bg-blocked/10 border-l border-blocked/20 cursor-pointer hover:bg-blocked/16'
@@ -726,6 +969,17 @@ function HarnessRow({ harness, onCellClick, onInfoClick, onNotesClick, onEditCli
                   </span>
                 )}
               </div>
+            ) : isCurrent && harness.stage === 7 && harness.completed ? (
+              <div className="flex items-center justify-center gap-1">
+                <span className="font-mono text-[9px] font-bold text-ok/80 tracking-widest">✓ COMPLETE</span>
+              </div>
+            ) : isCurrent && harness.stage === 7 && !readonly ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onCompleteClick(harness); }}
+                className="px-3 py-1 rounded-lg bg-done/90 text-white font-mono text-[9px] font-bold tracking-wider hover:bg-done transition-colors shadow-sm"
+              >
+                Finish
+              </button>
             ) : isCurrent ? (
               <div className="flex items-center justify-center gap-1">
                 <span className="text-[9px] text-done/60">⟲</span>

@@ -20,24 +20,58 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import sys
+import threading
 import traceback
 import uuid
 from datetime import date
 
+import base64
+import hashlib
+import hmac
+
 from flask import Flask, jsonify, request, send_from_directory
+
+# ── Readonly mode ─────────────────────────────────────────────────────────────
+# FORGE_READONLY=1 → read-only public server for Cloudflare tunnel (port 5001).
+# All mutating requests (POST/PUT/DELETE/PATCH) are blocked at before_request.
+# FORGE_USER / FORGE_PASSWORD → HTTP Basic Auth credentials for readonly server.
+READONLY          = os.environ.get("FORGE_READONLY", "0") == "1"
+_BASIC_AUTH_USER  = os.environ.get("FORGE_USER", "forge")
+_BASIC_AUTH_PASS  = os.environ.get("FORGE_PASSWORD", "")
 
 import agent_loop
 
 _HERE    = pathlib.Path(__file__).parent
 _DIST    = _HERE / "dist"
-_CFG_PATH = _HERE / "ewis_config.json"
+_CFG_PATH    = _HERE / "ewis_config.json"
 _INV_PATH    = _HERE / "data" / "inventory.json"
+_inv_lock    = threading.Lock()   # serialises all inventory reads+writes
 _DNOTES_PATH = _HERE / "data" / "design_notes.json"
 _WO_PATH     = _HERE / "data" / "work_orders.json"
 _PROC_PATH   = _HERE / "data" / "procurement.json"
 _DOCS_DIR    = _HERE / "data" / "documents"
+_BACKUP_DIR  = _HERE / "data" / "backups"
+_MAX_BACKUPS = 10   # rolling snapshots kept per file
+
+
+# ── Rolling backup (Layer 1) ──────────────────────────────────────────────────
+
+def _backup(path: pathlib.Path) -> None:
+    """Copy path → data/backups/<stem>.<YYYYMMDD_HHMMSS>.json, keep last 10."""
+    if not path.exists():
+        return
+    from datetime import datetime as _dt
+    _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ts  = _dt.now().strftime("%Y%m%d_%H%M%S")
+    dst = _BACKUP_DIR / f"{path.stem}.{ts}.json"
+    dst.write_bytes(path.read_bytes())
+    # prune oldest beyond limit
+    snapshots = sorted(_BACKUP_DIR.glob(f"{path.stem}.*.json"))
+    for old in snapshots[:-_MAX_BACKUPS]:
+        old.unlink(missing_ok=True)
 
 
 # ── Inventory helpers ─────────────────────────────────────────────────────────
@@ -52,6 +86,7 @@ def _load_inventory() -> dict:
 
 
 def _save_inventory(data: dict) -> None:
+    _backup(_INV_PATH)
     _INV_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 
@@ -67,6 +102,7 @@ def _load_work_orders() -> dict:
 
 
 def _save_work_orders(data: dict) -> None:
+    _backup(_WO_PATH)
     _WO_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 
@@ -82,10 +118,46 @@ def _load_procurement() -> dict:
 
 
 def _save_procurement(data: dict) -> None:
+    _backup(_PROC_PATH)
     _PROC_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 app = Flask(__name__, static_folder=None)
 app.config["JSON_SORT_KEYS"] = False
+
+@app.before_request
+def _enforce_readonly():
+    """Block writes and enforce Basic Auth when running in readonly mode."""
+    if not READONLY:
+        return  # full local server — no restrictions
+
+    # Block all write operations
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        return jsonify({"ok": False, "error": "Server is in read-only mode"}), 405
+
+    # Enforce HTTP Basic Auth if a password is configured
+    if _BASIC_AUTH_PASS:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Basic "):
+            try:
+                decoded  = base64.b64decode(auth[6:]).decode("utf-8")
+                user, pw = decoded.split(":", 1)
+                user_ok  = hmac.compare_digest(user, _BASIC_AUTH_USER)
+                pass_ok  = hmac.compare_digest(pw,   _BASIC_AUTH_PASS)
+                if user_ok and pass_ok:
+                    return  # authenticated
+            except Exception:
+                pass
+        # Not authenticated — prompt browser login dialog
+        return (
+            "Authentication required",
+            401,
+            {"WWW-Authenticate": 'Basic realm="EWIS Forge"'},
+        )
+
+@app.after_request
+def _readonly_header(response):
+    response.headers["X-Forge-Readonly"] = "true" if READONLY else "false"
+    return response
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -107,11 +179,31 @@ def _err(msg: str, code: int = 400):
     return jsonify({"ok": False, "error": msg}), code
 
 
+# ── Mode ─────────────────────────────────────────────────────────────────────
+
+@app.route("/api/mode", methods=["GET"])
+def api_mode():
+    return jsonify({"readonly": READONLY})
+
+
 # ── State ────────────────────────────────────────────────────────────────────
 
 @app.route("/api/state", methods=["GET"])
 def api_get_state():
     return jsonify(agent_loop.load_state())
+
+
+@app.route("/api/state/version", methods=["GET"])
+def api_state_version():
+    """Lightweight version token — returns the mtime of state.json.
+    Frontend polls this every few seconds; only fetches full state when it changes."""
+    import os
+    state_path = _HERE / "data" / "state.json"
+    try:
+        v = os.path.getmtime(state_path)
+    except OSError:
+        v = 0.0
+    return jsonify({"version": v})
 
 
 @app.route("/api/harness/<harness_id>", methods=["GET"])
@@ -139,7 +231,7 @@ def api_update_state():
     state = agent_loop.load_state()
 
     if action == "advance_stage":
-        result = agent_loop._tool_advance_stage(state, payload.get("harness_id", ""), payload.get("reason", ""))
+        result = agent_loop._tool_advance_stage(state, payload.get("harness_id", ""), payload.get("reason", ""), payload.get("actualHours", 0))
     elif action == "regress_stage":
         result = agent_loop._tool_regress_stage(state, payload.get("harness_id", ""), payload.get("reason", ""))
     elif action == "register_block":
@@ -228,7 +320,7 @@ def api_draft_reject():
 
 @app.route("/api/log", methods=["GET"])
 def api_log():
-    limit = int(request.args.get("limit", 50))
+    limit = int(request.args.get("limit", 200))
     return jsonify(agent_loop.get_log(limit))
 
 
@@ -370,23 +462,33 @@ def api_create_harness():
     hid     = (body.get("id") or "").strip().upper()
     if not project or not name or not hid:
         return _err("project, id and name required")
+    revision = (body.get("revision") or "A").strip().upper() or "A"
+    base_id  = (body.get("baseId") or "").strip() or None
     state = agent_loop.load_state()
     if any(h["id"] == hid for h in state["harnesses"]):
         return _err(f"Harness ID '{hid}' already exists")
-    state["harnesses"].append({
+    # Prevent duplicate (project, name, revision) combo
+    if any(h["project"] == project and h["name"] == name and h.get("revision","A").upper() == revision
+           for h in state["harnesses"]):
+        return _err(f"Harness '{name}' REV {revision} already exists in {project}")
+    entry = {
         "id": hid,
         "project": project,
         "name": name,
         "stage": 0,
         "blocked": False,
         "responsible": body.get("responsible", ""),
-        "revision": "A",
+        "designResponsible": body.get("designResponsible", ""),
+        "revision": revision,
         "ecns": [],
         "noteCount": 0,
         "notes": [],
-    })
+    }
+    if base_id:
+        entry["baseId"] = base_id
+    state["harnesses"].append(entry)
     agent_loop.save_state(state)
-    agent_loop.log_action("create_harness", body.get("by", "ui"), {"id": hid, "project": project})
+    agent_loop.log_action("create_harness", body.get("by", "ui"), {"id": hid, "project": project, "revision": revision})
     return jsonify({"ok": True, "state": state})
 
 
@@ -399,6 +501,39 @@ def api_delete_harness(harness_id: str):
         return _err("Harness not found", 404)
     agent_loop.save_state(state)
     agent_loop.log_action("delete_harness", "ui", {"id": harness_id})
+    return jsonify({"ok": True, "state": state})
+
+
+@app.route("/api/harnesses/<harness_id>/stage_history", methods=["POST"])
+def api_update_stage_history(harness_id: str):
+    """Replace the stageHistory array for a harness (apontamento edit)."""
+    body  = request.get_json(silent=True) or {}
+    state = agent_loop.load_state()
+    h = next((h for h in state["harnesses"] if h["id"] == harness_id), None)
+    if not h:
+        return _err("Harness not found", 404)
+    h["stageHistory"] = body.get("stageHistory", [])
+    agent_loop.save_state(state)
+    return jsonify({"ok": True, "state": state})
+
+
+@app.route("/api/harnesses/<harness_id>/complete", methods=["POST"])
+def api_complete_harness(harness_id: str):
+    """Mark a Delivered harness as completed."""
+    from datetime import date as _date
+    body  = request.get_json(silent=True) or {}
+    state = agent_loop.load_state()
+    h = next((h for h in state["harnesses"] if h["id"] == harness_id), None)
+    if not h:
+        return _err("Harness not found", 404)
+    if h.get("stage", 0) != 7:
+        return _err("Harness must be at Delivered stage to complete")
+    # Complete is a status flag on Delivered — stage stays at 7
+    h["completed"]   = True
+    h["completedAt"] = _date.today().isoformat()
+    h["completedBy"] = body.get("by", "ui")
+    agent_loop.save_state(state)
+    agent_loop.log_action("complete_harness", h["completedBy"], {"id": harness_id})
     return jsonify({"ok": True, "state": state})
 
 
@@ -452,7 +587,7 @@ def api_update_harness(harness_id: str):
     h = next((h for h in state["harnesses"] if h["id"] == harness_id), None)
     if not h:
         return _err("Harness not found", 404)
-    for k in ("name", "responsible", "revision",
+    for k in ("name", "responsible", "designResponsible", "revision",
               "plannedStart", "plannedEnd", "actualStart", "actualEnd"):
         if k in body:
             h[k] = body[k] if body[k] else None
@@ -494,6 +629,7 @@ def _load_dnotes() -> dict:
     return {}
 
 def _save_dnotes(data: dict) -> None:
+    _backup(_DNOTES_PATH)
     _DNOTES_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 @app.route("/api/design-notes/<project>/<phase>", methods=["GET"])
@@ -566,13 +702,16 @@ def api_create_ecn():
         counter += 1
         ecn_id = f"ECN-{str(counter).zfill(5)}"
     ecn = {
-        "id":               ecn_id,
-        "description":      desc,
-        "affectedHarnesses":body.get("affectedHarnesses", []),
-        "affectedBOMItems": body.get("affectedBOMItems", []),
-        "status":           body.get("status", "pending"),
-        "raisedBy":         body.get("raisedBy", "Operator"),
-        "raisedAt":         body.get("raisedAt", str(date.today())),
+        "id":                ecn_id,
+        "description":       desc,
+        "affectedHarnesses": body.get("affectedHarnesses", []),
+        "status":            body.get("status", "aberto_sem_disposicao"),
+        "raisedBy":          body.get("raisedBy", "Operator"),
+        "raisedAt":          body.get("raisedAt", str(date.today())),
+        "approver":          body.get("approver", ""),
+        "approvedAt":        body.get("approvedAt", ""),
+        "disposition":       body.get("disposition", ""),
+        "dispositionNotes":  body.get("dispositionNotes", ""),
     }
     state.setdefault("ecns", []).append(ecn)
     agent_loop.save_state(state)
@@ -587,7 +726,8 @@ def api_update_ecn(ecn_id: str):
     ecn   = next((e for e in state.get("ecns", []) if e["id"] == ecn_id), None)
     if not ecn:
         return _err("ECN not found", 404)
-    for k in ("description", "status", "raisedBy", "raisedAt", "affectedHarnesses", "affectedBOMItems"):
+    for k in ("description", "status", "raisedBy", "raisedAt", "affectedHarnesses",
+              "approver", "approvedAt", "disposition", "dispositionNotes"):
         if k in body:
             ecn[k] = body[k]
     agent_loop.save_state(state)
@@ -655,29 +795,58 @@ def api_create_inventory_item():
     return jsonify({"ok": True, "item": item})
 
 
+_INV_ALLOWED_FIELDS = (
+    "description", "category", "quantity", "reserved", "unit",
+    "location", "unitCost", "leadTimeDays", "supplier", "minStock", "partNumber", "procRef",
+)
+
 @app.route("/api/inventory/<item_id>", methods=["PUT"])
 def api_update_inventory_item(item_id: str):
     body = request.get_json(silent=True) or {}
-    data = _load_inventory()
-    item = next((i for i in data["items"] if i["id"] == item_id), None)
-    if not item:
-        return _err("Item not found", 404)
-    for k in ("description", "category", "quantity", "reserved", "unit",
-              "location", "unitCost", "leadTimeDays", "supplier", "minStock", "partNumber"):
-        if k in body:
-            item[k] = body[k]
-    _save_inventory(data)
+    with _inv_lock:
+        data = _load_inventory()
+        item = next((i for i in data["items"] if i["id"] == item_id), None)
+        if not item:
+            return _err("Item not found", 404)
+        for k in _INV_ALLOWED_FIELDS:
+            if k in body:
+                item[k] = body[k]
+        _save_inventory(data)
     return jsonify({"ok": True, "item": item})
+
+
+@app.route("/api/inventory/batch", methods=["PUT"])
+def api_batch_update_inventory():
+    """Apply multiple updates in a single load/save cycle — avoids race conditions."""
+    body = request.get_json(silent=True) or {}
+    updates_list = body.get("updates", [])   # [{id: str, updates: {field: value}}]
+    if not isinstance(updates_list, list):
+        return _err("updates must be a list")
+    with _inv_lock:
+        data = _load_inventory()
+        index = {i["id"]: i for i in data["items"]}
+        count = 0
+        for u in updates_list:
+            item = index.get(u.get("id", ""))
+            if item is None:
+                continue
+            for k in _INV_ALLOWED_FIELDS:
+                if k in u.get("updates", {}):
+                    item[k] = u["updates"][k]
+            count += 1
+        _save_inventory(data)
+    return jsonify({"ok": True, "updated": count})
 
 
 @app.route("/api/inventory/<item_id>", methods=["DELETE"])
 def api_delete_inventory_item(item_id: str):
-    data = _load_inventory()
-    before = len(data["items"])
-    data["items"] = [i for i in data["items"] if i["id"] != item_id]
-    if len(data["items"]) == before:
-        return _err("Item not found", 404)
-    _save_inventory(data)
+    with _inv_lock:
+        data = _load_inventory()
+        before = len(data["items"])
+        data["items"] = [i for i in data["items"] if i["id"] != item_id]
+        if len(data["items"]) == before:
+            return _err("Item not found", 404)
+        _save_inventory(data)
     return jsonify({"ok": True})
 
 
@@ -847,6 +1016,33 @@ def api_delete_work_order(wo_id: str):
 
 # ── Inventory import / export ────────────────────────────────────────────────
 
+@app.route("/api/inventory/parse-numbers", methods=["POST"])
+def api_parse_numbers():
+    """Parse an Apple .numbers file and return rows + headers as JSON."""
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "No file provided"}), 400
+    f = request.files["file"]
+    if not f.filename.lower().endswith(".numbers"):
+        return jsonify({"ok": False, "error": "Expected a .numbers file"}), 400
+    try:
+        import numbers_parser, tempfile, os
+        tmp = tempfile.NamedTemporaryFile(suffix=".numbers", delete=False)
+        try:
+            f.save(tmp.name)
+            doc = numbers_parser.Document(tmp.name)
+            sheet = doc.sheets[0]
+            table = sheet.tables[0]
+            all_rows = [[str(cell.value) if cell.value is not None else "" for cell in row] for row in table.iter_rows()]
+        finally:
+            os.unlink(tmp.name)
+        if len(all_rows) < 2:
+            return jsonify({"ok": False, "error": "Sheet is empty or has no data rows"}), 400
+        headers = all_rows[0]
+        rows = [dict(zip(headers, r)) for r in all_rows[1:] if any(v.strip() for v in r)]
+        return jsonify({"ok": True, "headers": headers, "rows": rows})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/api/inventory/import", methods=["POST"])
 def api_inventory_import():
     """
@@ -958,6 +1154,228 @@ def api_create_procurement():
     return jsonify({"ok": True, "document": doc})
 
 
+@app.route("/api/procurement/import", methods=["POST"])
+def api_import_procurement():
+    """
+    Bulk-import procurement documents from parsed rows.
+    Supports both full PO/PR rows (with 'number') and requisition-line rows
+    (description + qty + unit + unitCost + requestedDate). For requisition lines,
+    a PR number is auto-generated from the description.
+    Body: { rows: [...], mode: 'append'|'replace' }
+    """
+    body = request.get_json(silent=True) or {}
+    rows = body.get("rows", [])
+    mode = body.get("mode", "append")
+    data = _load_procurement() if mode == "append" else {"orders": []}
+    existing_numbers = {o["number"] for o in data["orders"]}
+    added = skipped = 0
+    seq = 1  # for auto-numbering rows that have no number at all
+
+    # Pre-count how many times each raw PR ID appears in this import batch
+    # so we know whether to append a line suffix.
+    from collections import Counter as _Counter
+    raw_numbers = [str(r.get("number") or "").strip() for r in rows if str(r.get("description") or "").strip()]
+    id_count = _Counter(raw_numbers)
+    id_seen: dict = {}   # raw_id -> how many times we've already processed it
+
+    for row in rows:
+        description = str(row.get("description") or "").strip()
+        if not description:
+            skipped += 1
+            continue
+
+        raw_number = str(row.get("number") or "").strip()
+
+        if not raw_number:
+            # No PR ID at all — generate from description
+            slug = description[:20].upper().replace(" ", "-").replace("/", "-")
+            base = f"PR-{slug}-{seq:03d}"
+            candidate = base
+            c = 1
+            while candidate in existing_numbers:
+                candidate = f"{base}-{c}"; c += 1
+            number = candidate
+            seq += 1
+        elif id_count[raw_number] > 1:
+            # Same PR ID appears on multiple lines — append a line suffix
+            line_idx = id_seen.get(raw_number, 0) + 1
+            id_seen[raw_number] = line_idx
+            number = f"{raw_number}-L{line_idx:02d}"
+            # Ensure uniqueness against already-imported records
+            candidate = number
+            c = 1
+            while candidate in existing_numbers:
+                candidate = f"{number}-{c}"; c += 1
+            number = candidate
+        else:
+            number = raw_number
+            if number in existing_numbers:
+                skipped += 1
+                continue
+
+        def _parse_number(v) -> float:
+            """Parse a numeric value treating '.' as decimal separator.
+            Commas are treated as thousands separators and stripped.
+            Examples: '528.90' -> 528.9, '1,234.56' -> 1234.56, '52890' -> 52890.0
+            """
+            if v is None:
+                return 0.0
+            s = str(v).strip()
+            # Remove thousands commas: '1,234.56' -> '1234.56'
+            s = s.replace(",", "")
+            # Remove any stray currency symbols or spaces
+            s = s.replace("€", "").replace("$", "").replace(" ", "")
+            try:
+                return float(s) if s else 0.0
+            except ValueError:
+                return 0.0
+
+        try:
+            qty = _parse_number(row.get("qty") or row.get("quantity") or 1) or 1.0
+        except (ValueError, TypeError):
+            qty = 1.0
+
+        # "estimated cost" from a PR export is the LINE TOTAL (not unit price).
+        # Store it directly as totalValue; derive unitCost = total / qty.
+        estimated_cost = _parse_number(row.get("estimatedCost") or row.get("cost") or 0)
+        explicit_unit  = _parse_number(row.get("unitCost") or 0)
+        explicit_total = _parse_number(row.get("totalValue") or row.get("value") or 0)
+
+        if explicit_total:
+            total_val = explicit_total
+            unit_cost = explicit_unit or (round(total_val / qty, 6) if qty else 0.0)
+        elif explicit_unit:
+            unit_cost = explicit_unit
+            total_val = round(unit_cost * qty, 4)
+        elif estimated_cost:
+            # estimated cost = line total
+            total_val = estimated_cost
+            unit_cost = round(total_val / qty, 6) if qty else 0.0
+        else:
+            total_val = 0.0
+            unit_cost = 0.0
+
+        doc = {
+            "id":            f"proc-{uuid.uuid4().hex[:8]}",
+            "number":        number,
+            "type":          str(row.get("type") or "PR").strip(),
+            "description":   description,
+            "supplier":      str(row.get("supplier") or "").strip(),
+            "project":       str(row.get("project") or "").strip(),
+            "createdAt":     str(row.get("createdAt") or date.today()),
+            "createdBy":     "import",
+            "status":        str(row.get("status") or "pending").strip(),
+            "totalValue":    total_val,
+            "currency":      str(row.get("currency") or "EUR").strip(),
+            "missingItems":  str(row.get("missingItems") or "").strip(),
+            "notes":         str(row.get("notes") or "").strip(),
+            "fileName":      "",
+            "fileRef":       None,
+            "fileType":      "",
+            "qty":           qty,
+            "unit":          str(row.get("unit") or row.get("uom") or "each").strip(),
+            "unitCost":      unit_cost,
+            "requestedDate": str(row.get("requestedDate") or row.get("requestDate") or "").strip(),
+            "partNumber":    str(row.get("partNumber") or row.get("pn") or row.get("part_number") or "").strip(),
+        }
+        data["orders"].append(doc)
+        existing_numbers.add(number)
+        added += 1
+
+    _save_procurement(data)
+    return jsonify({"ok": True, "added": added, "skipped": skipped, "total": len(data["orders"])})
+
+
+def _sync_one_inv_item(inv_data: dict, pn: str, qty: float, doc: dict, line: dict | None = None) -> str:
+    """Sync a single PN into inventory. Returns 'created'|'updated'|'skipped'."""
+    existing = next((i for i in inv_data["items"] if i["partNumber"] == pn), None)
+    proc_ref = doc.get("number", "")
+    desc = (line or {}).get("description") or doc.get("description", "")
+    unit = (line or {}).get("unit") or doc.get("unit", "each")
+    unit_cost = float((line or {}).get("unitCost") or doc.get("unitCost") or 0)
+    if existing:
+        existing["quantity"] = round(existing["quantity"] + qty, 4)
+        if doc.get("supplier") and not existing.get("supplier"):
+            existing["supplier"] = doc["supplier"]
+        if proc_ref and not existing.get("procRef"):
+            existing["procRef"] = proc_ref
+        return "updated"
+    else:
+        inv_data["items"].append({
+            "id":           f"INV-{uuid.uuid4().hex[:6].upper()}",
+            "partNumber":   pn,
+            "description":  desc,
+            "category":     doc.get("notes", "General") or "General",
+            "quantity":     qty,
+            "reserved":     0.0,
+            "unit":         unit,
+            "location":     "",
+            "unitCost":     unit_cost,
+            "leadTimeDays": 0,
+            "supplier":     doc.get("supplier", ""),
+            "minStock":     0.0,
+            "procRef":      proc_ref,
+        })
+        return "created"
+
+
+def _sync_proc_to_inventory(doc: dict) -> dict:
+    """
+    Called when a procurement doc is marked complete.
+    If doc has lineItems, syncs each line; otherwise falls back to single partNumber/qty.
+    Returns {"created": N, "updated": N, "skipped": N}
+    """
+    inv_data = _load_inventory()
+    results = {"created": 0, "updated": 0, "skipped": 0}
+
+    line_items = doc.get("lineItems") or []
+    if line_items:
+        for line in line_items:
+            pn = str(line.get("partNumber") or "").strip()
+            if not pn:
+                results["skipped"] += 1
+                continue
+            qty = float(line.get("qty") or 0)
+            action = _sync_one_inv_item(inv_data, pn, qty, doc, line)
+            results[action] += 1
+    else:
+        pn = (doc.get("partNumber") or "").strip()
+        if not pn:
+            results["skipped"] += 1
+        else:
+            qty = float(doc.get("qty") or 0)
+            action = _sync_one_inv_item(inv_data, pn, qty, doc)
+            results[action] += 1
+
+    _save_inventory(inv_data)
+    return results
+
+
+@app.route("/api/procurement/bulk-complete", methods=["POST"])
+def api_bulk_complete_procurement():
+    """Mark all (or a list of) procurement docs as complete and sync to inventory."""
+    body = request.get_json(silent=True) or {}
+    ids = body.get("ids")   # optional list; if absent, marks all non-cancelled docs
+    data = _load_procurement()
+    updated = 0
+    inv_results = []
+    for doc in data["orders"]:
+        if ids is not None and doc["id"] not in ids:
+            continue
+        if doc.get("status") == "cancelled":
+            continue
+        was_complete = doc.get("status") == "complete"
+        doc["status"] = "complete"
+        updated += 1
+        if not was_complete:
+            inv_results.append(_sync_proc_to_inventory(doc))
+    _save_procurement(data)
+    created = sum(r.get("created", 0) for r in inv_results)
+    updated_inv = sum(r.get("updated", 0) for r in inv_results)
+    return jsonify({"ok": True, "marked": updated,
+                    "inventoryCreated": created, "inventoryUpdated": updated_inv})
+
+
 @app.route("/api/procurement/<doc_id>", methods=["PUT"])
 def api_update_procurement(doc_id: str):
     body = request.get_json(silent=True) or {}
@@ -965,12 +1383,18 @@ def api_update_procurement(doc_id: str):
     doc = next((o for o in data["orders"] if o["id"] == doc_id), None)
     if not doc:
         return _err("Document not found", 404)
+    prev_status = doc.get("status")
     for k in ("status", "description", "supplier", "project",
-              "totalValue", "currency", "missingItems", "notes", "type"):
+              "totalValue", "currency", "missingItems", "notes", "type",
+              "partNumber", "qty", "unit", "unitCost", "requestedDate", "lineItems"):
         if k in body:
             doc[k] = body[k]
+    # Sync inventory when transitioning to complete
+    inv_result = None
+    if body.get("status") == "complete" and prev_status != "complete":
+        inv_result = _sync_proc_to_inventory(doc)
     _save_procurement(data)
-    return jsonify({"ok": True, "document": doc})
+    return jsonify({"ok": True, "document": doc, "inventorySync": inv_result})
 
 
 @app.route("/api/procurement/<doc_id>", methods=["DELETE"])
@@ -1016,7 +1440,7 @@ def api_ai_insights():
 
     blocked_harnesses = [h for h in state["harnesses"] if h["blocked"]]
     low_stock = [i for i in inv if (i["quantity"] - i["reserved"]) <= i.get("minStock", 0)]
-    pending_ecns = [e for e in state["ecns"] if e["status"] == "pending"]
+    pending_ecns = [e for e in state["ecns"] if e["status"] in ("pending", "aberto_sem_disposicao", "aberto_com_disposicao")]
     completed_wos = [o for o in orders if o["status"] == "complete"]
 
     # Rule-based insights (always available, no LLM needed)
@@ -1069,8 +1493,15 @@ def spa(path: str):
         return ("No dist/ found. Run: cd ewis-planning && npm run build", 503)
     full = _DIST / path
     if path and full.exists() and full.is_file():
-        return send_from_directory(_DIST, path)
-    return send_from_directory(_DIST, "index.html")
+        resp = send_from_directory(_DIST, path)
+        # Hashed assets (JS/CSS) are immutable — long cache.
+        # index.html must never be cached so the browser always gets the latest bundle hash.
+        if path == "index.html" or not path:
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
+    resp = send_from_directory(_DIST, "index.html")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 # ── Responsibles ──────────────────────────────────────────────────────────────
@@ -1086,6 +1517,7 @@ def _load_responsibles() -> dict:
     return {"responsibles": []}
 
 def _save_responsibles(data: dict) -> None:
+    _backup(_RESP_PATH)
     _RESP_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 @app.route("/api/responsibles", methods=["GET"])
@@ -1146,6 +1578,7 @@ def _load_pi() -> dict:
     return {"items": []}
 
 def _save_pi(data: dict) -> None:
+    _backup(_PI_PATH)
     _PI_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
 
 @app.route("/api/phase-items/<project>/<phase>", methods=["GET"])
@@ -1264,6 +1697,136 @@ def api_complete_wo_step(wo_id, step_id):
     _save_work_orders(data)
     return jsonify({"ok": True, "actualHours": wo["actualHours"], "woStatus": wo["status"]})
 
+# ── Delay Events ─────────────────────────────────────────────────────────────
+
+_EVENTS_PATH = _HERE / "data" / "events.json"
+
+def _load_events() -> dict:
+    if _EVENTS_PATH.exists():
+        try:
+            return json.loads(_EVENTS_PATH.read_text("utf-8"))
+        except Exception:
+            pass
+    return {"events": []}
+
+def _save_events(data: dict) -> None:
+    _backup(_EVENTS_PATH)
+    _EVENTS_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+
+@app.route("/api/events", methods=["GET"])
+def api_get_events():
+    return jsonify(_load_events())
+
+_EVENT_TYPES = ("Machine", "Tool", "Payment", "Material", "Contract", "Permit", "Other")
+
+@app.route("/api/events", methods=["POST"])
+def api_create_event():
+    body = request.get_json(silent=True) or {}
+    title = (body.get("title") or "").strip()
+    if not title:
+        return _err("title required")
+    expected_by  = (body.get("expectedBy")  or "").strip()
+    resolved_at  = (body.get("resolvedAt")  or "").strip()
+    if not expected_by or not resolved_at:
+        return _err("expectedBy and resolvedAt required")
+    event = {
+        "id":          f"EV-{uuid.uuid4().hex[:6].upper()}",
+        "title":       title,
+        "type":        body.get("type", "Other") if body.get("type") in _EVENT_TYPES else "Other",
+        "expectedBy":  expected_by,
+        "resolvedAt":  resolved_at,
+        "description": (body.get("description") or "").strip(),
+    }
+    data = _load_events()
+    data["events"].append(event)
+    _save_events(data)
+    return jsonify({"ok": True, "event": event})
+
+@app.route("/api/events/<event_id>", methods=["PUT"])
+def api_update_event(event_id: str):
+    body = request.get_json(silent=True) or {}
+    data = _load_events()
+    ev = next((e for e in data["events"] if e["id"] == event_id), None)
+    if not ev:
+        return _err("Event not found", 404)
+    for k in ("title", "expectedBy", "resolvedAt", "description"):
+        if k in body:
+            ev[k] = body[k]
+    if "type" in body and body["type"] in _EVENT_TYPES:
+        ev["type"] = body["type"]
+    _save_events(data)
+    return jsonify({"ok": True, "event": ev})
+
+@app.route("/api/events/<event_id>", methods=["DELETE"])
+def api_delete_event(event_id: str):
+    data = _load_events()
+    before = len(data["events"])
+    data["events"] = [e for e in data["events"] if e["id"] != event_id]
+    if len(data["events"]) == before:
+        return _err("Event not found", 404)
+    _save_events(data)
+    return jsonify({"ok": True})
+
+# ── Mate & Demate Log ────────────────────────────────────────────────────────
+
+_MD_PATH = _HERE / "data" / "mate_demate.json"
+
+def _load_md() -> dict:
+    if _MD_PATH.exists():
+        try:
+            return json.loads(_MD_PATH.read_text("utf-8"))
+        except Exception:
+            pass
+    return {"entries": []}
+
+def _save_md(data: dict) -> None:
+    _backup(_MD_PATH)
+    _MD_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+
+@app.route("/api/mate-demate", methods=["GET"])
+def api_get_md():
+    return jsonify(_load_md())
+
+@app.route("/api/mate-demate", methods=["POST"])
+def api_create_md():
+    body = request.get_json(silent=True) or {}
+    target_type = (body.get("targetType") or "").strip()
+    target_id   = (body.get("targetId") or "").strip()
+    fin         = (body.get("fin") or "").strip()
+    part_number = (body.get("partNumber") or "").strip()
+    operation   = (body.get("operation") or "").strip()
+    operator    = (body.get("operator") or "").strip()
+    date        = (body.get("date") or "").strip()
+    if not fin or operation not in ("mate", "demate") or not date:
+        return _err("fin, operation (mate|demate), and date are required")
+    if target_type not in ("harness", "equipment") or not target_id:
+        return _err("targetType (harness|equipment) and targetId are required")
+    data = _load_md()
+    entry = {
+        "id":         f"MD-{uuid.uuid4().hex[:6].upper()}",
+        "targetType": target_type,
+        "targetId":   target_id,
+        "fin":        fin,
+        "partNumber": part_number,
+        "operation":  operation,
+        "date":       date,
+        "operator":   operator,
+        "notes":      (body.get("notes") or "").strip() or None,
+    }
+    data["entries"].append(entry)
+    _save_md(data)
+    return jsonify({"ok": True, "entry": entry}), 201
+
+@app.route("/api/mate-demate/<entry_id>", methods=["DELETE"])
+def api_delete_md(entry_id: str):
+    data = _load_md()
+    before = len(data["entries"])
+    data["entries"] = [e for e in data["entries"] if e["id"] != entry_id]
+    if len(data["entries"]) == before:
+        return _err("Entry not found", 404)
+    _save_md(data)
+    return jsonify({"ok": True})
+
 # ── Entry ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1274,21 +1837,26 @@ if __name__ == "__main__":
     agent_loop.ensure_state_seeded()
     agent_loop.migrate_notes_to_files()
 
-    cfg  = _load_cfg()
-    host = cfg.get("server", {}).get("host", "0.0.0.0")
-    port = int(cfg.get("server", {}).get("port", 8082))
-    url  = f"http://localhost:{port}"
+    debug = "--debug" in sys.argv
 
-    no_browser = "--no-browser" in sys.argv
-    debug      = "--debug" in sys.argv
-
-    print(f"EWIS Planning server → {url}")
-
-    if not no_browser and not debug:
-        # In dev (no dist/), hint to use npm run dev; otherwise open Flask directly
+    if READONLY:
+        # Read-only public server — exposed via Cloudflare tunnel.
+        # Bound to 0.0.0.0 so cloudflared can reach it; port 5001.
+        port = int(os.environ.get("FORGE_PORT", "5001"))
+        host = "0.0.0.0"
+        print(f"EWIS Forge [READ-ONLY] → http://0.0.0.0:{port}")
+        print("  All write operations are blocked.")
+        print("  Point cloudflared at this port.")
+    else:
+        # Full-access local server — bound to localhost only.
+        cfg  = _load_cfg()
+        host = "127.0.0.1"
+        port = int(os.environ.get("FORGE_PORT", cfg.get("server", {}).get("port", 5000)))
+        url  = f"http://localhost:{port}"
+        print(f"EWIS Forge [FULL] → {url}")
         if not _DIST.exists():
-            print(f"  No dist/ found — run 'npm run dev' and open http://localhost:5173")
-        else:
+            print("  No dist/ — run 'npm run dev' and open http://localhost:5173")
+        elif "--no-browser" not in sys.argv and not debug:
             threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
     app.run(host=host, port=port, debug=debug)

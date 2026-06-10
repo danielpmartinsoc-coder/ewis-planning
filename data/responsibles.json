@@ -1,9 +1,1 @@
-{
-  "responsibles": [
-    { "id": "R-001", "name": "Daniel Prudente", "role": "Lead Engineer", "active": true },
-    { "id": "R-002", "name": "M. Santos",        "role": "Wiring Engineer",  "active": true },
-    { "id": "R-003", "name": "J. Ferreira",       "role": "Systems Engineer", "active": true },
-    { "id": "R-004", "name": "C. Oliveira",       "role": "Quality Engineer", "active": true },
-    { "id": "R-005", "name": "A. Costa",          "role": "Procurement",      "active": true }
-  ]
-}
+{"responsibles": []}

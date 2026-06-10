@@ -1,0 +1,65 @@
+[
+  {
+    "id": "f11bbb92-8e29",
+    "timestamp": "2026-06-09T16:54:01.644494",
+    "author": "system",
+    "text": "Moved to next step. Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 0
+  },
+  {
+    "id": "e23f0e1e-7c9d",
+    "timestamp": "2026-06-09T16:54:06.556026",
+    "author": "system",
+    "text": "Moved to next step. Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 1
+  },
+  {
+    "id": "a72b2e79-39c9",
+    "timestamp": "2026-06-09T16:54:11.196221",
+    "author": "system",
+    "text": "Moved to next step. Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 2
+  },
+  {
+    "id": "503523c5-e61a",
+    "timestamp": "2026-06-09T16:54:15.457456",
+    "author": "system",
+    "text": "Moved to next step. Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 3
+  },
+  {
+    "id": "b7916d27-e6e7",
+    "timestamp": "2026-06-09T16:54:20.918749",
+    "author": "system",
+    "text": "Moved to next step. Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 4
+  },
+  {
+    "id": "b4d92088-5830",
+    "timestamp": "2026-06-09T16:54:31.671827",
+    "author": "system",
+    "text": "Moved to next step. Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 5
+  },
+  {
+    "id": "dc509007-49b2",
+    "timestamp": "2026-06-09T16:55:10.522846",
+    "author": "system",
+    "text": "Delivered by Daniel. Updated by Carlos.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 6
+  }
+]

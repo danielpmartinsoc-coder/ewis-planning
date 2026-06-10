@@ -1,0 +1,65 @@
+[
+  {
+    "id": "19051eb1-87f2",
+    "timestamp": "2026-06-06T12:07:43.045061",
+    "author": "system",
+    "text": "Procurement Done",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 0
+  },
+  {
+    "id": "5af71b1e-fee7",
+    "timestamp": "2026-06-07T09:44:19.165952",
+    "author": "system",
+    "text": "Moving to next stage in sequence",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 1
+  },
+  {
+    "id": "5efd9a33-d355",
+    "timestamp": "2026-06-07T09:52:29.032832",
+    "author": "system",
+    "text": "Moved to Kit/Cut stage per user request",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 2
+  },
+  {
+    "id": "9e4c38aa-79dc",
+    "timestamp": "2026-06-08T08:55:38.866966",
+    "author": "system",
+    "text": "Finished",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 3
+  },
+  {
+    "id": "9ab0e2af-1b17",
+    "timestamp": "2026-06-08T09:05:29.786907",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 4
+  },
+  {
+    "id": "c1f31c85-2698",
+    "timestamp": "2026-06-08T09:05:31.454713",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 5
+  },
+  {
+    "id": "66622864-8543",
+    "timestamp": "2026-06-08T09:05:33.397868",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 6
+  }
+]

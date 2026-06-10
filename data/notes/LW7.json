@@ -1,0 +1,65 @@
+[
+  {
+    "id": "a5c13ce9-dfb0",
+    "timestamp": "2026-06-06T12:07:45.620389",
+    "author": "system",
+    "text": "Procurement Done",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 0
+  },
+  {
+    "id": "22b2bb12-4e89",
+    "timestamp": "2026-06-07T12:10:05.624289",
+    "author": "system",
+    "text": "Moved to Stocking stage as per programme schedule",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 1
+  },
+  {
+    "id": "5338bfad-b093",
+    "timestamp": "2026-06-08T09:05:37.646913",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 2
+  },
+  {
+    "id": "6375df26-2ac8",
+    "timestamp": "2026-06-08T09:05:39.679524",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 3
+  },
+  {
+    "id": "7f8168ff-c51c",
+    "timestamp": "2026-06-08T09:05:42.017551",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 4
+  },
+  {
+    "id": "608ee090-7f48",
+    "timestamp": "2026-06-08T09:05:45.006830",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 5
+  },
+  {
+    "id": "ed7b48e4-1d72",
+    "timestamp": "2026-06-08T09:05:47.741656",
+    "author": "system",
+    "text": "Finished.",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 6
+  }
+]

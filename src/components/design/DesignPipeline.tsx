@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import type { AppState, MilestoneStatus, Milestone, PhaseItem, PhaseItemType, Responsible } from '../../types';
+import type { AppState, MilestoneStatus, Milestone, PhaseItem, PhaseItemType, Responsible, DelayEvent } from '../../types';
 import type { DesignNote } from '../../api';
 import * as api from '../../api';
+import { DelayEventsBar } from '../events/DelayEventsBar';
 import {
   addDays, isoDate, startOfMonth, datePct,
   buildTicks, ZOOM_ORDER, ZOOM_LABELS, ZOOM_SPAN_DAYS, MONTHS,
@@ -260,12 +261,15 @@ function NotesPanel({ ms, currentUser }: { ms: Milestone; currentUser: string })
 
 // ── Gantt chart for design milestones ────────────────────────────────────────
 function DesignGantt({
-  milestones, selectedMs, onSelectMs, onEditMs,
+  milestones, selectedMs, onSelectMs, onEditMs, delayEvents = [], projects = [], onEventsRefresh,
 }: {
   milestones: AppState['milestones'];
   selectedMs: Milestone | null;
   onSelectMs: (ms: Milestone) => void;
   onEditMs: (ms: Milestone) => void;
+  delayEvents?: DelayEvent[];
+  projects?: string[];
+  onEventsRefresh?: () => void;
 }) {
   const todayDate = new Date(); todayDate.setHours(0,0,0,0);
   const todayStr  = isoDate(todayDate);
@@ -301,7 +305,7 @@ function DesignGantt({
     if (zoom === 'year') changeZoom('quarter');
   }
 
-  const projects = [...new Set(milestones.map((m) => m.project))].sort();
+  const msProjects = [...new Set(milestones.map((m) => m.project))].sort();
   const ROW_H = 44;
 
   return (
@@ -359,7 +363,7 @@ function DesignGantt({
           <div className="h-10 border-b border-border bg-surface2 flex items-center px-3">
             <span className="text-[9px] font-mono text-dim uppercase tracking-widest">Programme</span>
           </div>
-          {projects.map((proj) => {
+          {msProjects.map((proj) => {
             const pMs   = milestones.filter((m) => m.project === proj);
             const done  = pMs.filter((m) => m.status === 'done').length;
             return (
@@ -382,6 +386,14 @@ function DesignGantt({
         {/* Scrollable chart area */}
         <div className="flex-1 overflow-x-auto overflow-y-hidden">
           <div className="relative" style={{ minWidth: '100%' }}>
+            {/* ── Delay Events Band ── */}
+            <DelayEventsBar
+              events={delayEvents}
+              viewStart={viewStart}
+              viewEnd={viewEnd}
+              projects={projects}
+              onRefresh={onEventsRefresh ?? (() => {})}
+            />
             {/* Axis */}
             <div className="sticky top-0 z-10 h-10 bg-surface2 border-b border-border relative overflow-hidden">
               {ticks.map((t, i) => (
@@ -405,7 +417,7 @@ function DesignGantt({
             </div>
 
             {/* Rows */}
-            {projects.map((proj) => {
+            {msProjects.map((proj) => {
               const pMs = milestones.filter((m) => m.project === proj);
               return (
                 <div key={proj} className="relative border-b border-border/30" style={{ height: ROW_H }}>
@@ -695,22 +707,213 @@ function PhaseItemsPanel({ project, phase, responsibles }: {
   );
 }
 
+// ── Programme Card (Phases view) ─────────────────────────────────────────────
+
+function ProgrammeCard({
+  project, milestones, harnesses, responsibles, currentUser,
+  onStateChange, onCreateHarness, onEditMs, onDeleteMs,
+}: {
+  project: string;
+  milestones: Milestone[];
+  harnesses: AppState['harnesses'];
+  responsibles: Responsible[];
+  currentUser: string;
+  onStateChange: () => void;
+  onCreateHarness?: (proj: string) => void;
+  onEditMs: (ms: Milestone) => void;
+  onDeleteMs: (ms: Milestone) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const doneCount = milestones.filter((m) => m.status === 'done').length;
+  const hasBlocked = milestones.some((m) => m.status === 'blocked');
+  const hasRisk = milestones.some((m) => m.status === 'risk');
+
+  const headerColor = hasBlocked ? 'border-blocked/40 text-blocked' :
+    hasRisk ? 'border-risk/40 text-risk' :
+    doneCount === PHASES.length ? 'border-ok/40 text-ok' : 'border-border text-mid';
+
+  return (
+    <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-card">
+      {/* Programme header */}
+      <div className={`flex items-center gap-3 px-4 py-3 border-b border-border bg-surface2 border-l-4 ${headerColor}`}>
+        <button onClick={() => setExpanded((v) => !v)} className="text-dim text-xs">
+          {expanded ? '▾' : '▸'}
+        </button>
+        <span className="font-mono font-bold text-sm text-text">{project}</span>
+        <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${headerColor}`}>
+          {doneCount}/{PHASES.length} phases
+        </span>
+        <span className="text-[10px] text-dim font-mono">{harnesses.length} harness{harnesses.length !== 1 ? 'es' : ''}</span>
+        <div className="ml-auto flex gap-2">
+          {onCreateHarness && (
+            <button onClick={() => onCreateHarness(project)}
+              className="px-3 py-1 rounded-lg border border-border text-[11px] font-mono text-mid hover:text-done hover:border-done/40 transition-colors bg-surface">
+              + Harness
+            </button>
+          )}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="divide-y divide-border/40">
+          {/* Phase rows */}
+          {PHASES.map((phase) => {
+            const ms = milestones.find((m) => m.phase === phase);
+            return (
+              <PhaseRow
+                key={phase}
+                phase={phase}
+                milestone={ms ?? null}
+                project={project}
+                responsibles={responsibles}
+                currentUser={currentUser}
+                onEdit={() => ms && onEditMs(ms)}
+                onDelete={() => ms && onDeleteMs(ms)}
+                onStateChange={onStateChange}
+              />
+            );
+          })}
+
+          {/* Harnesses mini-table */}
+          {harnesses.length > 0 && (
+            <div className="px-4 py-3 bg-surface/50">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-dim mb-2">Harnesses</div>
+              <div className="grid gap-1">
+                {harnesses.map((h) => {
+                  const stageNames = ['BoM','Procurement','Stocking','Kit/Cut/Mark','Ready','In Execution','Done','Delivered'];
+                  return (
+                    <div key={h.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border text-[11px] ${h.blocked ? 'border-blocked/30 bg-blocked/5' : 'border-border/50 bg-surface'}`}>
+                      {h.blocked && <span className="w-1.5 h-1.5 rounded-full bg-blocked animate-pulse shrink-0" />}
+                      <span className="font-mono font-semibold text-text">{h.id}</span>
+                      <span className="px-1.5 py-0.5 rounded border font-mono text-[9px] font-bold bg-surface2 border-border text-mid whitespace-nowrap">
+                        REV {h.revision || 'A'}
+                      </span>
+                      <span className="text-dim truncate flex-1">{h.name}</span>
+                      {h.designResponsible && (
+                        <span className="text-[10px] text-accent/80 font-mono whitespace-nowrap shrink-0">✎ {h.designResponsible}</span>
+                      )}
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface2 border border-border text-dim whitespace-nowrap shrink-0">
+                        {stageNames[h.stage] ?? '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhaseRow({
+  phase, milestone, project, responsibles, currentUser,
+  onEdit, onDelete, onStateChange,
+}: {
+  phase: string;
+  milestone: Milestone | null;
+  project: string;
+  responsibles: Responsible[];
+  currentUser: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  onStateChange: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const st = milestone?.status ?? 'open';
+  const style = STATUS_STYLE[st as MilestoneStatus] ?? STATUS_STYLE.open;
+
+  async function quickStatus(status: MilestoneStatus) {
+    if (!milestone) return;
+    await api.upsertMilestone({ ...milestone, status, actual: status === 'done' ? new Date().toISOString().slice(0, 10) : (milestone.actual ?? null) });
+    onStateChange();
+  }
+
+  return (
+    <div className="px-4 py-0">
+      <div className="flex items-center gap-3 py-2.5 group/phase">
+        <button onClick={() => setExpanded((v) => !v)} className="text-dim text-[10px] w-3 shrink-0">
+          {expanded ? '▾' : '▸'}
+        </button>
+
+        {/* Phase badge */}
+        <span className="font-mono text-[11px] font-bold text-done w-6 shrink-0">{phase}</span>
+        <span className="text-[11px] text-mid w-32 shrink-0">{PHASE_LABELS[phase]}</span>
+
+        {/* Status badge — click to cycle */}
+        <span className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold cursor-pointer select-none ${style.badge}`}
+          title="Click to change status"
+          onClick={() => {
+            if (!milestone) return;
+            const cycle: MilestoneStatus[] = ['open','risk','blocked','done'];
+            const next = cycle[(cycle.indexOf(st as MilestoneStatus) + 1) % cycle.length];
+            quickStatus(next);
+          }}>
+          {STATUS_ICON[st as MilestoneStatus]} {STATUS_LABEL[st as MilestoneStatus]}
+        </span>
+
+        {/* Dates */}
+        {milestone ? (
+          <span className="text-[10px] font-mono text-dim ml-1">
+            P: {milestone.planned}{milestone.actual ? ` · A: ${milestone.actual}` : ''}
+          </span>
+        ) : (
+          <span className="text-[10px] text-dim italic">No milestone</span>
+        )}
+
+        {/* Actions — hover */}
+        <div className="ml-auto flex gap-1 opacity-0 group-hover/phase:opacity-100 transition-opacity">
+          {milestone && (
+            <>
+              <button onClick={onEdit} className="px-2 py-0.5 rounded border border-border text-[10px] text-dim hover:text-done hover:border-done/40 transition-colors">✏ Edit</button>
+              <button onClick={onDelete} className="px-2 py-0.5 rounded border border-border text-[10px] text-dim hover:text-blocked hover:border-blocked/40 transition-colors">✕</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded: Items + Notes panel */}
+      {expanded && (
+        <div className="pl-10 pb-3 space-y-3">
+          <PhaseItemsPanel project={project} phase={phase} responsibles={responsibles} />
+          {milestone && (
+            <div className="border-t border-border/40 pt-2">
+              <NotesPanel ms={milestone} currentUser={currentUser} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 interface Props {
   milestones: AppState['milestones'];
+  harnesses: AppState['harnesses'];
   onStateChange: () => void;
   currentUser?: string;
+  onCreateHarness?: (project: string) => void;
 }
 
-export function DesignPipeline({ milestones, onStateChange, currentUser = 'Operator' }: Props) {
-  const [renaming,     setRenaming]    = useState<string | null>(null);
-  const [editingMs,    setEditingMs]   = useState<Milestone | null>(null);
-  const [selectedMs,   setSelected]    = useState<Milestone | null>(null);
-  const [responsibles, setResponsibles] = useState<Responsible[]>([]);
+export function DesignPipeline({ milestones, harnesses, onStateChange, currentUser = 'Operator', onCreateHarness }: Props) {
+  const [renaming,       setRenaming]      = useState<string | null>(null);
+  const [editingMs,      setEditingMs]     = useState<Milestone | null>(null);
+  const [selectedMs,     setSelected]      = useState<Milestone | null>(null);
+  const [responsibles,   setResponsibles]  = useState<Responsible[]>([]);
+  const [viewMode,       setViewMode]      = useState<'timeline' | 'phases'>('timeline');
+  const [filterProject,  setFilterProject] = useState<string | null>(null);
+
+  const [delayEvents, setDelayEvents] = useState<DelayEvent[]>([]);
 
   useEffect(() => { api.getResponsibles().then(d => setResponsibles(d.responsibles || [])); }, []);
+  useEffect(() => { api.getEvents().then(d => setDelayEvents(d.events ?? [])); }, []);
 
   const projects = [...new Set(milestones.map((m) => m.project))].sort();
+  const visibleProjects    = filterProject ? [filterProject] : projects;
+  const filteredMilestones = filterProject ? milestones.filter((m) => m.project === filterProject) : milestones;
+  const filteredHarnesses  = filterProject ? harnesses.filter((h) => h.project === filterProject) : harnesses;
 
   async function handleRename(project: string, newName: string) {
     const res = await api.renameProject(project, newName, 'ui');
@@ -750,52 +953,99 @@ export function DesignPipeline({ milestones, onStateChange, currentUser = 'Opera
     <div className="flex flex-col h-screen overflow-hidden">
 
       {/* ── Sub-header ── */}
-      <div className="flex items-center gap-4 px-6 py-2.5 border-b border-border bg-surface shrink-0">
-        <div>
-          <h1 className="font-semibold text-text text-sm">Design Pipeline</h1>
-          <p className="text-[10px] text-dim font-mono">F2–F6 engineering milestones — {projects.length} programmes</p>
+      <div className="border-b border-border bg-surface shrink-0">
+        {/* Top row: title + toggle */}
+        <div className="flex items-center justify-between px-6 py-2.5">
+          <div>
+            <h1 className="font-semibold text-text text-sm">Design Pipeline</h1>
+            <p className="text-[10px] text-dim font-mono">F2–F6 engineering milestones — {projects.length} programme{projects.length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="flex gap-1 border border-border rounded-lg p-0.5 bg-surface2">
+            {(['timeline', 'phases'] as const).map((m) => (
+              <button key={m} onClick={() => setViewMode(m)}
+                className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold tracking-wider transition-all ${
+                  viewMode === m ? 'bg-surface border-border text-done shadow-card' : 'text-dim hover:text-mid'
+                }`}>
+                {m === 'timeline' ? '▬ Timeline' : '▤ Phases'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Programme management */}
-        <div className="flex gap-2 ml-6 flex-wrap">
-          {projects.map((proj) => {
-            const pMs  = milestones.filter((m) => m.project === proj);
-            const done = pMs.filter((m) => m.status === 'done').length;
-            const hasRisk    = pMs.some((m) => m.status === 'risk');
-            const hasBlocked = pMs.some((m) => m.status === 'blocked');
-            return (
-              <div key={proj} className="flex items-center gap-1 group/prog">
-                <button
-                  onClick={() => setSelected(pMs[0] ?? null)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold transition-all ${
-                    hasBlocked ? 'border-blocked/40 bg-blocked/8 text-blocked' :
-                    hasRisk    ? 'border-risk/40 bg-risk/8 text-risk' :
-                    done === PHASES.length ? 'border-ok/40 bg-ok/8 text-ok' :
-                    'border-border bg-surface2 text-mid'
-                  }`}>
-                  {hasBlocked ? '✕' : hasRisk ? '▲' : done === PHASES.length ? '✓' : '○'}
-                  {proj}
-                  <span className="text-[9px] opacity-60">{done}/{PHASES.length}</span>
-                </button>
-                <div className="flex gap-0.5 opacity-0 group-hover/prog:opacity-100 transition-opacity">
-                  <button onClick={() => setRenaming(proj)} title="Rename"
-                    className="w-5 h-5 flex items-center justify-center rounded border border-border text-[10px] text-dim hover:text-done hover:border-done/40">✏</button>
-                  <button onClick={() => handleDeleteProject(proj)} title="Delete"
-                    className="w-5 h-5 flex items-center justify-center rounded border border-border text-[10px] text-dim hover:text-blocked hover:border-blocked/40">✕</button>
+        {/* Programme chips row — scrollable, clickable to filter */}
+        {projects.length > 0 && (
+          <div className="flex items-center gap-1.5 px-6 pb-2 overflow-x-auto scrollbar-none">
+            {filterProject && (
+              <button onClick={() => setFilterProject(null)}
+                className="shrink-0 px-2 py-1 rounded-lg border border-done/40 bg-done/8 text-done text-[10px] font-mono font-semibold whitespace-nowrap hover:bg-done/15 transition-colors">
+                All ×
+              </button>
+            )}
+            {projects.map((proj) => {
+              const pMs      = milestones.filter((m) => m.project === proj);
+              const done     = pMs.filter((m) => m.status === 'done').length;
+              const hasRisk    = pMs.some((m) => m.status === 'risk');
+              const hasBlocked = pMs.some((m) => m.status === 'blocked');
+              const isActive = filterProject === proj;
+              const color = isActive
+                ? 'border-done/60 bg-done/12 text-done ring-1 ring-done/30'
+                : hasBlocked ? 'border-blocked/40 bg-blocked/8 text-blocked'
+                : hasRisk    ? 'border-risk/40 bg-risk/8 text-risk'
+                : done === PHASES.length ? 'border-ok/40 bg-ok/8 text-ok'
+                : 'border-border bg-surface2 text-mid';
+              const icon = hasBlocked ? '✕' : hasRisk ? '▲' : done === PHASES.length ? '✓' : '○';
+              return (
+                <div key={proj} className="flex items-center gap-0.5 group/prog shrink-0">
+                  <button
+                    onClick={() => setFilterProject(filterProject === proj ? null : proj)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-mono font-semibold transition-all whitespace-nowrap ${color}`}>
+                    <span>{icon}</span>
+                    <span>{proj}</span>
+                    <span className="opacity-50 text-[9px]">{done}/{PHASES.length}</span>
+                  </button>
+                  <div className="flex gap-0.5 opacity-0 group-hover/prog:opacity-100 pointer-events-none group-hover/prog:pointer-events-auto transition-opacity">
+                    <button onClick={() => setRenaming(proj)} title="Rename"
+                      className="w-4 h-4 flex items-center justify-center rounded border border-border text-[9px] text-dim hover:text-done hover:border-done/40">✏</button>
+                    <button onClick={() => handleDeleteProject(proj)} title="Delete"
+                      className="w-4 h-4 flex items-center justify-center rounded border border-border text-[9px] text-dim hover:text-blocked hover:border-blocked/40">✕</button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-
+              );
+            })}
+          </div>
+        )}
         {projects.length === 0 && (
-          <p className="text-xs text-dim italic">No programmes — use + Programme to create one.</p>
+          <p className="px-6 pb-2 text-xs text-dim italic">No programmes — use + Programme to create one.</p>
         )}
       </div>
 
-      {/* ── Body: Gantt (top) + detail panel (bottom) ── */}
-      <div className="flex-1 flex flex-col min-h-0">
-        {/* Gantt */}
+      {/* ── Body ── */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+        {/* ── PHASES VIEW ── */}
+        {viewMode === 'phases' && (
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+            {projects.length === 0 ? (
+              <div className="text-center text-dim text-sm py-16">No programmes yet — use + Programme to create one.</div>
+            ) : visibleProjects.map((proj) => (
+              <ProgrammeCard
+                key={proj}
+                project={proj}
+                milestones={filteredMilestones.filter((m) => m.project === proj)}
+                harnesses={filteredHarnesses.filter((h) => h.project === proj)}
+                responsibles={responsibles}
+                currentUser={currentUser}
+                onStateChange={onStateChange}
+                onCreateHarness={onCreateHarness}
+                onEditMs={setEditingMs}
+                onDeleteMs={handleDeleteMilestone}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* ── TIMELINE VIEW (Gantt + detail panel) ── */}
+        {viewMode === 'timeline' && <>
         <div className={`overflow-hidden transition-all ${selectedMs ? 'flex-[0_0_55%]' : 'flex-1'}`}>
           {projects.length === 0 ? (
             <div className="flex items-center justify-center h-full text-sm text-dim">
@@ -803,10 +1053,13 @@ export function DesignPipeline({ milestones, onStateChange, currentUser = 'Opera
             </div>
           ) : (
             <DesignGantt
-              milestones={milestones}
+              milestones={filteredMilestones}
               selectedMs={selectedMs}
               onSelectMs={setSelected}
               onEditMs={setEditingMs}
+              delayEvents={delayEvents}
+              projects={projects}
+              onEventsRefresh={() => api.getEvents().then(d => setDelayEvents(d.events ?? []))}
             />
           )}
         </div>
@@ -851,6 +1104,7 @@ export function DesignPipeline({ milestones, onStateChange, currentUser = 'Opera
             </div>
           </div>
         )}
+        </>}
       </div>
 
       {renaming  && <RenameModal project={renaming} onSave={(n) => handleRename(renaming, n)} onClose={() => setRenaming(null)} />}

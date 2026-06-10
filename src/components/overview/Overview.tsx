@@ -36,16 +36,15 @@ function DonutChart({ segments }: { segments: { value: number; color: string }[]
 }
 
 // ── Stat card ────────────────────────────────────────────────────────────────
-function StatCard({ icon, label, value, sub, color = 'text-text', trend }:
-  { icon: string; label: string; value: string | number; sub?: string; color?: string; trend?: string }) {
+function StatCard({ icon, label, value, sub, color = 'text-text', accent = 'bg-surface2 border-border/60' }:
+  { icon: React.ReactNode; label: string; value: string | number; sub?: string; color?: string; accent?: string }) {
   return (
-    <div className="bg-surface2 border border-border/60 rounded-xl px-4 py-3 flex items-start gap-3 min-w-0">
-      <span className="text-2xl leading-none mt-0.5 shrink-0">{icon}</span>
-      <div className="min-w-0">
-        <div className="text-[10px] font-mono uppercase tracking-widest text-dim truncate">{label}</div>
-        <div className={`text-2xl font-bold leading-tight ${color}`}>{value}</div>
-        {sub   && <div className="text-[10px] text-dim">{sub}</div>}
-        {trend && <div className="text-[10px] text-ok">{trend}</div>}
+    <div className={`${accent} border rounded-xl px-4 py-3.5 flex items-center gap-3 min-w-0`}>
+      <span className="text-xl leading-none shrink-0 opacity-80">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[9px] font-mono uppercase tracking-widest text-dim truncate mb-0.5">{label}</div>
+        <div className={`text-2xl font-bold leading-none ${color}`}>{value}</div>
+        {sub && <div className="text-[10px] text-dim mt-0.5">{sub}</div>}
       </div>
     </div>
   );
@@ -59,7 +58,9 @@ function GanttOverview({ harnesses, onNavigate }:
   return (
     <div className="bg-surface2 border border-border/60 rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60 shrink-0">
-        <span className="font-semibold text-sm text-text">Production Pipeline Overview</span>
+        <span className="font-semibold text-sm text-text">Production Pipeline Overview
+          <span className="ml-2 text-[10px] font-normal font-mono text-dim">— blocked & in execution</span>
+        </span>
         <button onClick={() => onNavigate('pipeline')} className="text-[10px] text-accent hover:underline font-mono">
           View all →
         </button>
@@ -80,7 +81,10 @@ function GanttOverview({ harnesses, onNavigate }:
           </thead>
           <tbody>
             {projects.map((proj) => {
-              const rows = harnesses.filter((h) => h.project === proj);
+              const rows = harnesses.filter(
+                (h) => h.project === proj && (h.blocked || h.stage === 5)
+              );
+              if (rows.length === 0) return null;
               return [
                 <tr key={`hdr-${proj}`}>
                   <td colSpan={STAGES.length + 1}
@@ -166,7 +170,7 @@ function ReleaseFunnel({ harnesses }: { harnesses: AppState['harnesses'] }) {
     { label: 'ICD Sign-off',      count: harnesses.filter((h) => h.stage >= 1).length },
     { label: 'Schematic Released',count: harnesses.filter((h) => h.stage >= 2).length },
     { label: 'BoM Release',       count: harnesses.filter((h) => h.stage >= 3).length },
-    { label: 'ECN Pending',       count: harnesses.filter((h) => h.ecns.some((e) => e.status === 'pending')).length },
+    { label: 'ECN Pending',       count: harnesses.filter((h) => h.ecns.some((e) => ['pending','aberto_sem_disposicao','aberto_com_disposicao'].includes(e.status))).length },
     { label: 'Blocked',           count: harnesses.filter((h) => h.blocked).length },
   ];
   const max = Math.max(...stages.map((s) => s.count), 1);
@@ -217,11 +221,13 @@ function ECNTracker({ ecns }: { ecns: AppState['ecns'] }) {
               </td>
               <td className="px-3 py-2">
                 <span className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-bold whitespace-nowrap ${
-                  ecn.status === 'pending'  ? 'bg-risk/10 text-risk border border-risk/25' :
-                  ecn.status === 'approved' ? 'bg-ok/10 text-ok border border-ok/25' :
+                  ecn.status === 'aberto_sem_disposicao'  ? 'bg-risk/10 text-risk border border-risk/25' :
+                  ecn.status === 'aberto_com_disposicao'  ? 'bg-accent/10 text-accent border border-accent/25' :
                   'bg-dim/10 text-dim border border-dim/25'
                 }`}>
-                  {ecn.status === 'pending' ? 'Pending' : ecn.status === 'approved' ? 'Approved' : 'Rejected'}
+                  {ecn.status === 'aberto_sem_disposicao' ? 'Aberto'
+                   : ecn.status === 'aberto_com_disposicao' ? 'Com Disposição'
+                   : 'Fechado'}
                 </span>
               </td>
               <td className="px-3 py-2 font-mono text-[10px] text-dim whitespace-nowrap">{ecn.raisedAt}</td>
@@ -233,98 +239,94 @@ function ECNTracker({ ecns }: { ecns: AppState['ecns'] }) {
   );
 }
 
-// ── Impact Radar Top Risks ───────────────────────────────────────────────────
-function TopRisks(_props: Pick<AppState, 'harnesses' | 'ecns'>) {
-  const risks = [
-    { risk: 'ECN backlog',       category: 'Engineering',   impact: 'High',   likelihood: 'High',   trend: '↑', mitigation: 'Increase ECN review capacity' },
-    { risk: 'Supplier lead time',category: 'Supply Chain',  impact: 'High',   likelihood: 'Medium', trend: '↔', mitigation: 'Dual sourcing strategy' },
-    { risk: 'Component shortage',category: 'Materials',     impact: 'Medium', likelihood: 'Medium', trend: '↑', mitigation: 'Safety stock & allocation' },
-    { risk: 'Resource conflict', category: 'People',        impact: 'Medium', likelihood: 'Low',    trend: '↓', mitigation: 'Reallocate engineering resources' },
-  ];
-  const impactColor = (imp: string) =>
-    imp === 'High' ? 'text-blocked' : imp === 'Medium' ? 'text-risk' : 'text-ok';
+// ── Top Risks — derived from real state ──────────────────────────────────────
+function TopRisks({ harnesses, ecns }: Pick<AppState, 'harnesses' | 'ecns'>) {
+  type Risk = { risk: string; category: string; impact: 'High' | 'Medium' | 'Low'; detail: string };
+
+  const risks: Risk[] = [];
+
+  // Blocked harnesses → High
+  const blocked = harnesses.filter((h) => h.blocked);
+  if (blocked.length > 0) {
+    risks.push({
+      risk:     `${blocked.length} harness${blocked.length > 1 ? 'es' : ''} blocked`,
+      category: 'Production',
+      impact:   'High',
+      detail:   blocked.slice(0, 3).map((h) => h.id).join(', ') + (blocked.length > 3 ? '…' : ''),
+    });
+  }
+
+  // Pending ECNs → High if >2, Medium otherwise
+  const pendingEcns = ecns.filter((e) => ['pending','aberto_sem_disposicao','aberto_com_disposicao'].includes(e.status));
+  if (pendingEcns.length > 0) {
+    risks.push({
+      risk:     `${pendingEcns.length} ECN${pendingEcns.length > 1 ? 's' : ''} em aberto`,
+      category: 'Engineering',
+      impact:   pendingEcns.length > 2 ? 'High' : 'Medium',
+      detail:   pendingEcns.slice(0, 2).map((e) => e.id).join(', ') + (pendingEcns.length > 2 ? '…' : ''),
+    });
+  }
+
+  // Harnesses with open ECNs (at risk)
+  const atRisk = harnesses.filter((h) => !h.blocked && h.ecns.length > 0);
+  if (atRisk.length > 0) {
+    risks.push({
+      risk:     `${atRisk.length} harness${atRisk.length > 1 ? 'es' : ''} with open ECNs`,
+      category: 'Engineering',
+      impact:   atRisk.length > 4 ? 'High' : 'Medium',
+      detail:   atRisk.slice(0, 3).map((h) => h.id).join(', ') + (atRisk.length > 3 ? '…' : ''),
+    });
+  }
+
+  // Large backlog (>80% not started)
+  const backlog = harnesses.filter((h) => h.stage === 0 && !h.blocked);
+  const backlogPct = harnesses.length > 0 ? backlog.length / harnesses.length : 0;
+  if (backlogPct > 0.8 && harnesses.length > 5) {
+    risks.push({
+      risk:     `${Math.round(backlogPct * 100)}% of harnesses not started`,
+      category: 'Schedule',
+      impact:   'Medium',
+      detail:   `${backlog.length} of ${harnesses.length} still in BoM stage`,
+    });
+  }
+
+  const impactColor = (imp: Risk['impact']) =>
+    imp === 'High' ? 'text-blocked bg-blocked/10 border-blocked/25'
+    : imp === 'Medium' ? 'text-risk bg-risk/10 border-risk/20'
+    : 'text-ok bg-ok/10 border-ok/20';
 
   return (
     <div className="bg-surface2 border border-border/60 rounded-xl overflow-hidden">
       <div className="px-4 py-2.5 border-b border-border/60">
-        <span className="font-semibold text-sm text-text">Impact Radar — Top Risks</span>
+        <span className="font-semibold text-sm text-text">Top Risks</span>
       </div>
-      <table className="w-full text-[11px]">
-        <thead>
-          <tr className="border-b border-border/40">
-            {['Risk','Category','Impact','Likelihood','Trend','Mitigation'].map((h) => (
-              <th key={h} className="text-left px-3 py-1 font-mono text-[9px] text-dim font-normal">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {risks.map((r) => (
-            <tr key={r.risk} className="border-b border-border/20 hover:bg-surface/40">
-              <td className="px-3 py-1.5 text-text text-[10px] font-medium">{r.risk}</td>
-              <td className="px-3 py-1.5 text-dim text-[10px]">{r.category}</td>
-              <td className={`px-3 py-1.5 text-[10px] font-bold ${impactColor(r.impact)}`}>{r.impact}</td>
-              <td className={`px-3 py-1.5 text-[10px] font-bold ${impactColor(r.likelihood)}`}>{r.likelihood}</td>
-              <td className="px-3 py-1.5 text-[11px] text-mid font-bold">{r.trend}</td>
-              <td className="px-3 py-1.5 text-[10px] text-dim">{r.mitigation}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ── Mini Capacity Heatmap ────────────────────────────────────────────────────
-function MiniHeatmap({ onNavigate }: { onNavigate: (v: 'heatmap') => void }) {
-  const rows = ['Engineering', 'Procurement', 'Manufacturing', 'Test', 'Quality'];
-  const weeks = ['Wk 10\n10-16 Mar', 'Wk 11\n17-23 Mar', 'Wk 12\n24-30 Mar', 'Wk 13\n31Mar-6Apr', 'Wk 14\n7-13 Apr'];
-  // Synthetic load data (0=low,1,2=medium,3,4=high)
-  const data = [
-    [1,2,3,4,3],[2,3,2,1,2],[3,4,4,3,2],[1,1,2,3,2],[2,2,1,1,0]
-  ];
-  const cellColor = (v: number) =>
-    v === 0 ? 'bg-ok/15' : v === 1 ? 'bg-ok/35' : v === 2 ? 'bg-risk/30' : v === 3 ? 'bg-risk/55' : 'bg-blocked/55';
-
-  return (
-    <div className="bg-surface2 border border-border/60 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60">
-        <div>
-          <span className="font-semibold text-sm text-text">Capacity Heatmap</span>
-          <span className="ml-2 text-[9px] text-dim font-mono">Next 30 Days</span>
-        </div>
-        <button onClick={() => onNavigate('heatmap')} className="text-[10px] text-accent hover:underline font-mono">View →</button>
-      </div>
-      <div className="p-3 overflow-x-auto">
-        <table className="w-full text-[9px] border-collapse">
+      {risks.length === 0 ? (
+        <div className="px-4 py-6 text-center text-xs text-ok font-mono">✓ No active risks detected</div>
+      ) : (
+        <table className="w-full text-[11px]">
           <thead>
-            <tr>
-              <th className="w-24" />
-              {weeks.map((w) => (
-                <th key={w} className="px-1 pb-1 font-mono text-[8px] text-dim font-normal text-center whitespace-pre leading-tight">
-                  {w}
-                </th>
+            <tr className="border-b border-border/40">
+              {['Risk', 'Category', 'Impact', 'Detail'].map((h) => (
+                <th key={h} className="text-left px-3 py-1 font-mono text-[9px] text-dim font-normal">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, ri) => (
-              <tr key={row}>
-                <td className="pr-2 py-1 font-mono text-[9px] text-dim text-right">{row}</td>
-                {data[ri].map((v, ci) => (
-                  <td key={ci} className="px-0.5 py-0.5 text-center">
-                    <div className={`w-10 h-4 rounded-sm mx-auto ${cellColor(v)}`} />
-                  </td>
-                ))}
+            {risks.map((r) => (
+              <tr key={r.risk} className="border-b border-border/20 hover:bg-surface/40">
+                <td className="px-3 py-1.5 text-text text-[10px] font-medium whitespace-nowrap">{r.risk}</td>
+                <td className="px-3 py-1.5 text-dim text-[10px]">{r.category}</td>
+                <td className="px-3 py-1.5">
+                  <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border ${impactColor(r.impact)}`}>
+                    {r.impact}
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 text-[9px] text-dim font-mono">{r.detail}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <div className="flex items-center gap-1 mt-1.5 justify-end">
-          <span className="text-[8px] text-dim font-mono mr-1">Low</span>
-          {[0,1,2,3,4].map((v) => <div key={v} className={`w-3 h-2 rounded-sm ${cellColor(v)}`} />)}
-          <span className="text-[8px] text-dim font-mono ml-1">High</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -338,7 +340,7 @@ function Notifications({ harnesses, ecns }: Pick<AppState, 'harnesses' | 'ecns'>
       detail: h.blockReason ?? '',
       age: '2 min ago',
     })),
-    ...ecns.filter((e) => e.status === 'pending').map((e) => ({
+    ...ecns.filter((e) => ['pending','aberto_sem_disposicao'].includes(e.status)).map((e) => ({
       type: 'ecn' as const,
       text: `${e.id} aguarda aprovação`,
       detail: e.description,
@@ -388,7 +390,7 @@ function RecentActivity({ state }: { state: AppState }) {
       detail: h.blockReason?.slice(0, 40) ?? '',
       age: '2 min ago',
     })),
-    ...state.ecns.filter((e) => e.status === 'pending').slice(0, 1).map((e) => ({
+    ...state.ecns.filter((e) => e.status === 'aberto_sem_disposicao').slice(0, 1).map((e) => ({
       color: 'bg-risk',
       text: `${e.id} submitted for ${e.affectedHarnesses[0]}`,
       detail: '',
@@ -427,14 +429,16 @@ function RecentActivity({ state }: { state: AppState }) {
 export function Overview({ state, onNavigate }: Props) {
   const { harnesses, ecns } = state;
 
-  const total     = harnesses.length;
-  const blocked   = harnesses.filter((h) => h.blocked).length;
-  const done      = harnesses.filter((h) => h.stage >= STAGES.length - 1).length;
-  const atRisk    = harnesses.filter((h) => !h.blocked && h.ecns.length > 0).length;
-  const onTrack   = Math.max(0, total - blocked - atRisk);
-  const pctOT     = total > 0 ? Math.round((onTrack / total) * 100) : 0;
-  const pendingEcn = ecns.filter((e) => e.status === 'pending').length;
-  const approvedEcn = ecns.filter((e) => e.status === 'approved').length;
+  const total       = harnesses.length;
+  const blocked     = harnesses.filter((h) => h.blocked).length;
+  const completed   = harnesses.filter((h) => h.completed === true).length;
+  const atRisk      = harnesses.filter((h) => !h.blocked && h.ecns.length > 0).length;
+  const backlog     = harnesses.filter((h) => !h.blocked && h.stage === 0).length;
+  // "In Execution" = active (not blocked, not completed, stage > 0)
+  const inExecution = harnesses.filter((h) => !h.blocked && !h.completed && h.stage > 0).length;
+  const pendingEcn  = ecns.filter((e) => ['pending','aberto_sem_disposicao'].includes(e.status)).length;
+  const approvedEcn = ecns.filter((e) => e.status === 'aberto_com_disposicao').length;
+
 
   const blockedAndRisk = [
     ...harnesses.filter((h) => h.blocked),
@@ -445,14 +449,78 @@ export function Overview({ state, onNavigate }: Props) {
     <div className="bg-bg px-8 py-6 flex flex-col gap-6">
 
       {/* ── Stat cards ── */}
-      <div className="grid grid-cols-7 gap-4 shrink-0">
-        <StatCard icon="📋" label="Total Harnesses" value={total}     sub="All time"          color="text-text" />
-        <StatCard icon="✅" label="On Track"        value={`${pctOT}%`} sub={`${onTrack}/${total}`} color="text-ok" trend="↑ stable" />
-        <StatCard icon="⚠️" label="At Risk"         value={atRisk}    sub={`${total > 0 ? Math.round((atRisk/total)*100) : 0}%`} color="text-risk" />
-        <StatCard icon="🔴" label="Blocked"         value={blocked}   sub={`${total > 0 ? Math.round((blocked/total)*100) : 0}%`} color="text-blocked" />
-        <StatCard icon="✓"  label="Completed"       value={done}      sub="This period"       color="text-done" />
-        <StatCard icon="⏱" label="ECN Pending"     value={pendingEcn} sub="Awaiting approval" color="text-risk" />
-        <StatCard icon="📄" label="ECN Approved"    value={approvedEcn} sub="This period"     color="text-ok" />
+      <div className="grid grid-cols-7 gap-3 shrink-0">
+        {/* Total */}
+        <StatCard
+          icon="🗂"
+          label="Total Harnesses"
+          value={total}
+          sub="All programmes"
+          color="text-text"
+          accent="bg-surface2 border-border/60"
+        />
+        {/* Backlog */}
+        <StatCard
+          icon={<span className="inline-block w-3 h-3 rounded-full bg-dim/40 ring-2 ring-dim/20" />}
+          label="Backlog"
+          value={backlog}
+          sub={`${total > 0 ? Math.round((backlog / total) * 100) : 0}% not started`}
+          color={backlog > 0 ? 'text-dim' : 'text-dim/40'}
+          accent="bg-surface2 border-border/60"
+        />
+        {/* In Execution */}
+        <StatCard
+          icon={<span className="inline-block w-3 h-3 rounded-full bg-ok ring-2 ring-ok/30" />}
+          label="In Execution"
+          value={inExecution}
+          sub={`${total > 0 ? Math.round((inExecution / total) * 100) : 0}% of total`}
+          color="text-ok"
+          accent="bg-ok/5 border-ok/20"
+        />
+        {/* Completed */}
+        <StatCard
+          icon={<span className="font-bold text-done text-base">✓</span>}
+          label="Complete"
+          value={completed}
+          sub={`${total > 0 ? Math.round((completed / total) * 100) : 0}% of total`}
+          color="text-done"
+          accent="bg-done/5 border-done/20"
+        />
+        {/* At Risk */}
+        <StatCard
+          icon="⚠"
+          label="At Risk"
+          value={atRisk}
+          sub={atRisk > 0 ? 'Has open ECNs' : 'All clear'}
+          color={atRisk > 0 ? 'text-risk' : 'text-dim'}
+          accent={atRisk > 0 ? 'bg-risk/5 border-risk/20' : 'bg-surface2 border-border/60'}
+        />
+        {/* Blocked */}
+        <StatCard
+          icon={<span className="inline-block w-3 h-3 rounded-full bg-blocked" />}
+          label="Blocked"
+          value={blocked}
+          sub={blocked > 0 ? 'Needs attention' : 'None blocked'}
+          color={blocked > 0 ? 'text-blocked' : 'text-dim'}
+          accent={blocked > 0 ? 'bg-blocked/5 border-blocked/20' : 'bg-surface2 border-border/60'}
+        />
+        {/* ECN block */}
+        <div className="grid grid-rows-2 gap-2">
+          <div className="bg-risk/5 border border-risk/20 rounded-xl px-3 py-2 flex items-center gap-2.5">
+            <span className="text-base shrink-0">⏱</span>
+            <div>
+              <div className="text-[9px] font-mono uppercase tracking-widest text-dim">ECN Pending</div>
+              <div className="text-lg font-bold text-risk leading-none">{pendingEcn}</div>
+            </div>
+          </div>
+          <div className="bg-ok/5 border border-ok/20 rounded-xl px-3 py-2 flex items-center gap-2.5">
+            <span className="text-base shrink-0">📄</span>
+            <div>
+              <div className="text-[9px] font-mono uppercase tracking-widest text-dim">ECN Approved</div>
+              <div className="text-lg font-bold text-ok leading-none">{approvedEcn}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── Body: left + right sidebar ── */}
@@ -478,15 +546,19 @@ export function Overview({ state, onNavigate }: Props) {
             <span className="font-semibold text-sm text-text block mb-3">Status Distribution</span>
             <div className="flex items-center gap-4">
               <DonutChart segments={[
-                { value: onTrack, color: '#22c55e' },
-                { value: atRisk,  color: '#f59e0b' },
-                { value: blocked, color: '#ef4444' },
+                { value: inExecution, color: '#22c55e' },
+                { value: completed,   color: '#3b82f6' },
+                { value: atRisk,      color: '#f59e0b' },
+                { value: blocked,     color: '#ef4444' },
+                { value: backlog,     color: '#6b7280' },
               ]} />
               <div className="flex flex-col gap-2">
                 {[
-                  { label: 'On Track', count: onTrack,  color: 'bg-ok',      text: 'text-ok' },
-                  { label: 'At Risk',  count: atRisk,   color: 'bg-risk',    text: 'text-risk' },
-                  { label: 'Blocked',  count: blocked,  color: 'bg-blocked', text: 'text-blocked' },
+                  { label: 'In Execution', count: inExecution, color: 'bg-ok',      text: 'text-ok' },
+                  { label: 'Complete',     count: completed,   color: 'bg-done',    text: 'text-done' },
+                  { label: 'At Risk',      count: atRisk,      color: 'bg-risk',    text: 'text-risk' },
+                  { label: 'Blocked',      count: blocked,     color: 'bg-blocked', text: 'text-blocked' },
+                  { label: 'Backlog',      count: backlog,     color: 'bg-dim/40',  text: 'text-dim' },
                 ].map(({ label, count, color, text }) => (
                   <div key={label} className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${color} shrink-0`} />
@@ -536,7 +608,6 @@ export function Overview({ state, onNavigate }: Props) {
             </table>
           </div>
 
-          <MiniHeatmap onNavigate={onNavigate} />
           <Notifications harnesses={harnesses} ecns={ecns} />
           <RecentActivity state={state} />
         </div>

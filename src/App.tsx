@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ViewId, AIInsight, AppState } from './types';
 import { useAppState } from './store/useAppState';
+import { ReadonlyContext } from './context/ReadonlyContext';
 import { Overview } from './components/overview/Overview';
 import { DesignPipeline } from './components/design/DesignPipeline';
 import { HarnessPipeline } from './components/pipeline/HarnessPipeline';
@@ -9,10 +10,14 @@ import { CapacityHeatmap } from './components/heatmap/CapacityHeatmap';
 import { Inventory } from './components/inventory/Inventory';
 import { WorkOrders } from './components/workorders/WorkOrders';
 import { Procurement } from './components/procurement/Procurement';
+import { EventsPage } from './components/events/DelayEventsBar';
+import { ConnectorCycles } from './components/connectors/ConnectorCycles';
+import { ActivityLog } from './components/activitylog/ActivityLog';
 import { ChatPanel } from './components/chat/ChatPanel';
 import { DraftBanner } from './components/chat/DraftBanner';
 import { AIConfigModal } from './components/chat/AIConfigModal';
 import { CreateProjectModal, CreateHarnessModal } from './components/shared/CreateModal';
+import { PeopleModal } from './components/shared/PeopleModal';
 import * as api from './api';
 
 const NAV: { id: ViewId; label: string }[] = [
@@ -24,6 +29,9 @@ const NAV: { id: ViewId; label: string }[] = [
   { id: 'procurement', label: 'Procurement' },
   { id: 'radar',      label: 'Impact Radar' },
   { id: 'heatmap',    label: 'Capacity Heatmap' },
+  { id: 'events',     label: 'Delay Events' },
+  { id: 'connectors', label: 'Connector Cycles' },
+  { id: 'activitylog', label: 'Activity Log' },
 ];
 
 // PROGRAMS is derived dynamically from state — see inside App()
@@ -39,12 +47,15 @@ export default function App() {
   const [view,          setView]        = useState<ViewId>('overview');
   const [program,       setProgram]     = useState<string>('All Programs');
   const [userName,      setUserName]    = useState(() => localStorage.getItem('ewis-user') ?? 'Operator');
+  const [readonly,      setReadonly]    = useState(false);
   const [aiAvailable,   setAiAvail]     = useState(false);
   const [showAIConfig,  setAIConf]      = useState(false);
   const [showCreateProj,setCreateProj]  = useState(false);
-  const [showCreateH,   setCreateH]     = useState(false);
+  const [createHProject,setCreateHProject] = useState<string | null>(null);
   const [insights,      setInsights]    = useState<AIInsight[]>([]);
   const [insightOpen,   setInsightOpen] = useState(false);
+  const [chatOpen,      setChatOpen]    = useState(false);
+  const [showPeople,    setShowPeople]  = useState(false);
 
   const {
     state, draft, backendStatus, accepting,
@@ -53,7 +64,7 @@ export default function App() {
   } = useAppState();
 
   const blockedCount = state.harnesses.filter((h) => h.blocked).length;
-  const pendingEcns  = state.ecns.filter((e) => e.status === 'pending').length;
+  const pendingEcns  = state.ecns.filter((e) => ['pending','aberto_sem_disposicao','aberto_com_disposicao'].includes(e.status)).length;
   const total        = state.harnesses.length;
   const onTrack      = state.harnesses.filter((h) => !h.blocked && h.ecns.length === 0).length;
   const pctOnTrack   = total > 0 ? Math.round((onTrack / total) * 100) : 0;
@@ -67,6 +78,11 @@ export default function App() {
   const programOptions = ['All Programs', ...allProjects];
 
   useEffect(() => { localStorage.setItem('ewis-user', userName); }, [userName]);
+
+  // Detect read-only mode (set by server when running via Cloudflare tunnel)
+  useEffect(() => {
+    fetch('/api/mode').then((r) => r.json()).then((d) => setReadonly(!!d.readonly)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (backendStatus === 'online') {
@@ -101,6 +117,7 @@ export default function App() {
   const fixedHeight = view === 'pipeline' || view === 'heatmap';
 
   return (
+    <ReadonlyContext.Provider value={readonly}>
     <div className={`flex flex-col bg-bg font-sans ${fixedHeight ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
 
       {/* ── Header ── */}
@@ -131,15 +148,13 @@ export default function App() {
             {programOptions.map((p) => <option key={p}>{p}</option>)}
           </select>
 
-          {/* Create buttons */}
-          <button onClick={() => setCreateProj(true)}
-            className="px-3 py-1.5 rounded-lg border border-border bg-surface2 text-xs text-mid font-medium hover:bg-surface3 transition-colors shadow-card">
-            + Programme
-          </button>
-          <button onClick={() => setCreateH(true)}
-            className="px-3 py-1.5 rounded-lg border border-border bg-surface2 text-xs text-mid font-medium hover:bg-surface3 transition-colors shadow-card">
-            + Harness
-          </button>
+          {/* Create buttons — hidden in readonly mode */}
+          {!readonly && (
+            <button onClick={() => setCreateProj(true)}
+              className="px-3 py-1.5 rounded-lg border border-border bg-surface2 text-xs text-mid font-medium hover:bg-surface3 transition-colors shadow-card">
+              + Programme
+            </button>
+          )}
 
           <div className="flex-1" />
 
@@ -185,18 +200,47 @@ export default function App() {
               {backendStatus === 'online' ? '● API' : backendStatus === 'offline' ? '○ offline' : '… connecting'}
             </span>
 
-            <button onClick={() => setAIConf(true)}
-              className={`px-2.5 py-1 rounded-full border font-medium transition-colors ${
-                aiAvailable ? 'bg-accent/10 border-accent/30 text-accent hover:bg-accent/20'
-                            : 'bg-surface2 border-border text-dim hover:text-mid'
-              }`}>
-              ◈ AI
-            </button>
+            {!readonly && (
+              <button onClick={() => setAIConf(true)}
+                className={`px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                  aiAvailable ? 'bg-accent/10 border-accent/30 text-accent hover:bg-accent/20'
+                              : 'bg-surface2 border-border text-dim hover:text-mid'
+                }`}>
+                ◈ AI
+              </button>
+            )}
 
-            <button onClick={resetToMock}
-              className="px-2.5 py-1 rounded-full border border-border bg-surface2 text-dim hover:text-mid hover:bg-surface3 transition-colors">
-              ↺ Reset
-            </button>
+            {!readonly && (
+              <button onClick={() => setShowPeople(true)}
+                className="px-2.5 py-1 rounded-full border border-border bg-surface2 text-dim hover:text-mid hover:bg-surface3 transition-colors">
+                ♟ People
+              </button>
+            )}
+
+            {!readonly && (
+              <button onClick={resetToMock}
+                className="px-2.5 py-1 rounded-full border border-border bg-surface2 text-dim hover:text-mid hover:bg-surface3 transition-colors">
+                ↺ Reset
+              </button>
+            )}
+
+            {!readonly && <button onClick={() => setChatOpen((v) => !v)}
+              className={`px-2.5 py-1 rounded-full border font-medium transition-colors flex items-center gap-1.5 ${
+                chatOpen
+                  ? 'bg-surface border-border text-mid'
+                  : 'bg-done/10 border-done/40 text-done hover:bg-done/20'
+              }`}>
+              ⌘ Agent
+              {!aiAvailable && !chatOpen && (
+                <span className="w-1.5 h-1.5 rounded-full bg-risk animate-pulse" />
+              )}
+            </button>}
+
+            {readonly && (
+              <span className="px-2.5 py-1 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-400 text-[10px] font-mono font-semibold tracking-widest">
+                ◉ READ-ONLY
+              </span>
+            )}
 
             <div className="w-px h-4 bg-border mx-1" />
             <span className="text-dim">{userName}</span>
@@ -239,7 +283,7 @@ export default function App() {
       {/* Main content */}
       <main className={fixedHeight ? 'flex-1 overflow-hidden' : 'flex-1'}>
         {view === 'overview'   && <Overview state={filteredState} onNavigate={setView} />}
-        {view === 'design'     && <DesignPipeline milestones={filteredState.milestones} onStateChange={refreshState} currentUser={userName} />}
+        {view === 'design'     && <DesignPipeline milestones={filteredState.milestones} onStateChange={refreshState} currentUser={userName} onCreateHarness={(proj) => setCreateHProject(proj)} harnesses={filteredState.harnesses} />}
         {view === 'pipeline'   && (
           <HarnessPipeline
             harnesses={filteredState.harnesses}
@@ -250,6 +294,7 @@ export default function App() {
             onResolveBlock={resolveBlock}
             onAddNote={addNote}
             onStateChange={refreshState}
+            onCreateHarness={(proj) => setCreateHProject(proj)}
           />
         )}
         {view === 'inventory'   && <Inventory />}
@@ -257,6 +302,9 @@ export default function App() {
         {view === 'procurement' && <Procurement projects={allProjects} />}
         {view === 'radar'      && <ImpactRadar ecns={state.ecns} harnesses={filteredState.harnesses} onStateChange={refreshState} />}
         {view === 'heatmap'    && <CapacityHeatmap people={state.people} />}
+        {view === 'events'     && <EventsPage projects={allProjects} />}
+        {view === 'connectors'  && <ConnectorCycles harnesses={state.harnesses.map(h => ({ id: h.id, name: h.name, project: h.project }))} />}
+        {view === 'activitylog' && <ActivityLog />}
       </main>
 
       {showAIConfig && (
@@ -266,12 +314,14 @@ export default function App() {
         }} />
       )}
 
+      {showPeople && <PeopleModal onClose={() => setShowPeople(false)} />}
+
       {showCreateProj && (
         <CreateProjectModal currentUser={userName} onCreated={handleStateCreated} onClose={() => setCreateProj(false)} />
       )}
 
-      {showCreateH && (
-        <CreateHarnessModal projects={allProjects} currentUser={userName} onCreated={handleStateCreated} onClose={() => setCreateH(false)} />
+      {createHProject !== null && (
+        <CreateHarnessModal projects={allProjects} initialProject={createHProject} harnesses={state.harnesses} currentUser={userName} onCreated={handleStateCreated} onClose={() => setCreateHProject(null)} />
       )}
 
       <ChatPanel
@@ -281,7 +331,10 @@ export default function App() {
         context={{ view, selection: null }}
         onRunAgent={api.runAgent}
         aiAvailable={aiAvailable}
+        open={chatOpen}
+        onToggle={() => setChatOpen((v) => !v)}
       />
     </div>
+    </ReadonlyContext.Provider>
   );
 }

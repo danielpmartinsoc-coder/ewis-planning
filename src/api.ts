@@ -1,4 +1,4 @@
-import type { AppState, InventoryItem, WorkOrder, BomAnalysisResult, BomAnalysisSummary, AIInsight } from './types';
+import type { AppState, InventoryItem, WorkOrder, BomAnalysisResult, BomAnalysisSummary, AIInsight, DelayEvent, MateDemateEntry } from './types';
 
 const BASE = '/api';
 
@@ -150,7 +150,7 @@ export async function deleteProject(
 
 export async function updateHarness(
   id: string, updates: {
-    name?: string; responsible?: string; revision?: string;
+    name?: string; responsible?: string; designResponsible?: string; revision?: string;
     plannedStart?: string; plannedEnd?: string;
     actualStart?: string;  actualEnd?: string;
   }
@@ -165,15 +165,28 @@ export async function createProject(
 }
 
 export async function createHarness(
-  project: string, id: string, name: string, responsible: string, by: string
+  project: string, id: string, name: string, responsible: string, by: string, revision?: string, designResponsible?: string, baseId?: string
 ): Promise<{ ok: boolean; state?: AppState; error?: string }> {
-  return _post('/harnesses', { project, id, name, responsible, by });
+  return _post('/harnesses', { project, id, name, responsible, by, revision, designResponsible, baseId });
 }
 
 export async function deleteHarness(
   harnessId: string
 ): Promise<{ ok: boolean; state?: AppState; error?: string }> {
   return _delete(`/harnesses/${encodeURIComponent(harnessId)}`);
+}
+
+export async function completeHarness(
+  harnessId: string
+): Promise<{ ok: boolean; state?: AppState; error?: string }> {
+  return _post(`/harnesses/${encodeURIComponent(harnessId)}/complete`, {});
+}
+
+export async function updateStageHistory(
+  harnessId: string,
+  stageHistory: import('./types').StageHistoryEntry[]
+): Promise<{ ok: boolean; state?: AppState; error?: string }> {
+  return _post(`/harnesses/${encodeURIComponent(harnessId)}/stage_history`, { stageHistory });
 }
 
 export async function upsertMilestone(
@@ -224,15 +237,21 @@ export async function updateDesignNote(
 // ── ECN CRUD ──────────────────────────────────────────────────────────────────
 
 export async function createECN(data: {
-  description: string; affectedHarnesses: string[]; affectedBOMItems: string[];
+  description: string; affectedHarnesses: string[];
   status: string; raisedBy: string; raisedAt: string;
+  approver?: string; approvedAt?: string; disposition?: string;
 }): Promise<{ ok: boolean; state?: AppState; error?: string }> {
   return _post('/ecns', data);
 }
 
 export async function updateECN(
   id: string,
-  updates: { description?: string; status?: string; affectedHarnesses?: string[]; affectedBOMItems?: string[]; raisedBy?: string; raisedAt?: string }
+  updates: {
+    description?: string; status?: string; affectedHarnesses?: string[];
+    raisedBy?: string; raisedAt?: string;
+    approver?: string; approvedAt?: string;
+    disposition?: string; dispositionNotes?: string;
+  }
 ): Promise<{ ok: boolean; state?: AppState; error?: string }> {
   return _put(`/ecns/${encodeURIComponent(id)}`, updates);
 }
@@ -257,6 +276,12 @@ export async function updateInventoryItem(
   id: string, updates: Partial<InventoryItem>
 ): Promise<{ ok: boolean; item?: InventoryItem; error?: string }> {
   return _put(`/inventory/${id}`, updates);
+}
+
+export async function batchUpdateInventoryItems(
+  updates: { id: string; updates: Partial<InventoryItem> }[]
+): Promise<{ ok: boolean; updated?: number; error?: string }> {
+  return _put('/inventory/batch', { updates });
 }
 
 export async function deleteInventoryItem(
@@ -325,13 +350,28 @@ export async function createProcDocument(data: {
 export async function updateProcDocument(
   id: string,
   updates: { status?: string; description?: string; supplier?: string; project?: string;
-             totalValue?: number; currency?: string; missingItems?: string; notes?: string; type?: string }
+             totalValue?: number; currency?: string; missingItems?: string; notes?: string; type?: string;
+             partNumber?: string; qty?: number; unit?: string; unitCost?: number; requestedDate?: string;
+             lineItems?: import('./types').ProcLineItem[] }
 ): Promise<{ ok: boolean; document?: import('./types').ProcDocument; error?: string }> {
   return _put(`/procurement/${id}`, updates);
 }
 
 export async function deleteProcDocument(id: string): Promise<{ ok: boolean; error?: string }> {
   return _delete(`/procurement/${id}`);
+}
+
+export async function bulkCompleteProcurement(
+  ids?: string[]
+): Promise<{ ok: boolean; marked?: number; inventoryCreated?: number; inventoryUpdated?: number; error?: string }> {
+  return _post('/procurement/bulk-complete', ids ? { ids } : {});
+}
+
+export async function importProcurement(
+  rows: Record<string, unknown>[],
+  mode: 'append' | 'replace' = 'append'
+): Promise<{ ok: boolean; added?: number; skipped?: number; total?: number; error?: string }> {
+  return _post('/procurement/import', { rows, mode });
 }
 
 // ── AI Insights ───────────────────────────────────────────────────────────────
@@ -411,4 +451,46 @@ export async function completeWOStep(
   data: { actualHours: number; completedBy: string; notes?: string }
 ): Promise<{ ok: boolean; actualHours?: number; woStatus?: string; error?: string }> {
   return _post(`/work-orders/${woId}/steps/${stepId}/complete`, data);
+}
+
+// ── Delay Events ──────────────────────────────────────────────────────────────
+
+export async function getEvents(): Promise<{ events: DelayEvent[] }> {
+  return _get('/events');
+}
+
+export async function createEvent(
+  data: Omit<DelayEvent, 'id'>
+): Promise<{ ok: boolean; event?: DelayEvent; error?: string }> {
+  return _post('/events', data);
+}
+
+export async function updateEvent(
+  id: string, updates: Partial<DelayEvent>
+): Promise<{ ok: boolean; event?: DelayEvent; error?: string }> {
+  return _put(`/events/${id}`, updates);
+}
+
+export async function deleteEvent(
+  id: string
+): Promise<{ ok: boolean; error?: string }> {
+  return _delete(`/events/${id}`);
+}
+
+// ── Mate & Demate Log ─────────────────────────────────────────────────────────
+
+export async function getMateDemateLog(): Promise<{ entries: MateDemateEntry[] }> {
+  return _get('/mate-demate');
+}
+
+export async function createMateDemateEntry(
+  data: Omit<MateDemateEntry, 'id'>
+): Promise<{ ok: boolean; entry?: MateDemateEntry; error?: string }> {
+  return _post('/mate-demate', data);
+}
+
+export async function deleteMateDemateEntry(
+  id: string
+): Promise<{ ok: boolean; error?: string }> {
+  return _delete(`/mate-demate/${id}`);
 }

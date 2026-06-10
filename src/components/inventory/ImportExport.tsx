@@ -95,6 +95,22 @@ export function ImportModal({ onImported, onClose }: Props) {
     setFileName(file.name);
     const ext = file.name.split('.').pop()?.toLowerCase();
 
+    if (ext === 'numbers') {
+      const fd = new FormData();
+      fd.append('file', file);
+      fetch('/api/inventory/parse-numbers', { method: 'POST', body: fd })
+        .then((r) => r.json())
+        .then((res) => {
+          if (!res.ok) { setErr(res.error ?? 'Erro ao ler arquivo .numbers'); return; }
+          setCols(res.headers);
+          setRows(res.rows);
+          setMapping(autoMap(res.headers));
+          setStep('preview');
+        })
+        .catch(() => setErr('Erro ao enviar arquivo para o servidor'));
+      return;
+    }
+
     if (ext === 'csv' || ext === 'tsv') {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -181,7 +197,7 @@ export function ImportModal({ onImported, onClose }: Props) {
               <span className="text-4xl">📂</span>
               <p className="text-sm font-medium text-text">Click to choose file or drag & drop</p>
               <p className="text-xs text-dim">CSV · TSV · XLS · XLSX</p>
-              <input ref={fileRef} type="file" accept=".csv,.tsv,.xls,.xlsx" className="hidden" onChange={handleFile} />
+              <input ref={fileRef} type="file" accept=".csv,.tsv,.xls,.xlsx,.numbers" className="hidden" onChange={handleFile} />
               {err && <p className="text-xs text-blocked mt-2">{err}</p>}
             </div>
           )}

@@ -240,7 +240,8 @@ def reject_draft(rejected_by: str) -> dict:
 
 # ── Tool implementations (operate on a mutable state dict in memory) ─────────
 
-def _tool_advance_stage(state: dict, harness_id: str, reason: str = "") -> dict:
+def _tool_advance_stage(state: dict, harness_id: str, reason: str = "", actual_hours: float = 0) -> dict:
+    from datetime import date as _date
     for h in state["harnesses"]:
         if h["id"] == harness_id:
             if h.get("blocked"):
@@ -249,6 +250,16 @@ def _tool_advance_stage(state: dict, harness_id: str, reason: str = "") -> dict:
                 return {"ok": False, "error": f"{harness_id} is already at final stage (Delivered)"}
             old = h["stage"]
             h["stage"] += 1
+            # Record hours for the stage being left
+            if actual_hours or reason:
+                entry = {
+                    "stage": old,
+                    "hours": float(actual_hours),
+                    "reason": reason,
+                    "date": _date.today().isoformat(),
+                    "operator": "",
+                }
+                h.setdefault("stageHistory", []).append(entry)
             if reason:
                 _append_note(h, reason, move_direction="advance", stage_at_time=old)
             return {"ok": True, "harness_id": harness_id, "from": STAGES[old], "to": STAGES[h["stage"]]}
@@ -264,6 +275,11 @@ def _tool_regress_stage(state: dict, harness_id: str, reason: str = "") -> dict:
                 return {"ok": False, "error": f"{harness_id} is already at first stage (BoM)"}
             old = h["stage"]
             h["stage"] -= 1
+            # Moving back from Delivered clears the completed status
+            if old == 7 and h.get("completed"):
+                h["completed"]   = False
+                h["completedAt"] = None
+                h["completedBy"] = None
             if reason:
                 _append_note(h, reason, move_direction="back", stage_at_time=old)
             return {"ok": True, "harness_id": harness_id, "from": STAGES[old], "to": STAGES[h["stage"]]}

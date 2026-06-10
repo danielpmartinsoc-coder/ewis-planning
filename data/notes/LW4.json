@@ -1,0 +1,65 @@
+[
+  {
+    "id": "00e859aa-c3a3",
+    "timestamp": "2026-06-06T12:07:36.606300",
+    "author": "system",
+    "text": "Procurement Done",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 0
+  },
+  {
+    "id": "103b45c1-1be6",
+    "timestamp": "2026-06-06T19:36:08.047968",
+    "author": "system",
+    "text": "Concluded",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 1
+  },
+  {
+    "id": "46fd6d09-7ff1",
+    "timestamp": "2026-06-06T19:36:10.706737",
+    "author": "system",
+    "text": "Concluded",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 2
+  },
+  {
+    "id": "95f4e6f0-5ae8",
+    "timestamp": "2026-06-06T19:36:23.114794",
+    "author": "system",
+    "text": "Concluded",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 3
+  },
+  {
+    "id": "28c0f8ee-3b76",
+    "timestamp": "2026-06-06T19:36:26.089124",
+    "author": "system",
+    "text": "Concluded",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 4
+  },
+  {
+    "id": "0f6fcc97-b49c",
+    "timestamp": "2026-06-08T08:56:38.322068",
+    "author": "system",
+    "text": "Carlos: Harnesses Finished",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 5
+  },
+  {
+    "id": "fca46e03-3396",
+    "timestamp": "2026-06-08T08:56:53.580806",
+    "author": "system",
+    "text": "Carlos: Finished",
+    "attachments": [],
+    "moveDirection": "advance",
+    "stageAtTime": 6
+  }
+]

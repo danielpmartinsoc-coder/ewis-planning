@@ -15,6 +15,8 @@ interface Props {
   context?: Record<string, unknown>;
   onRunAgent: (messages: { role: string; content: string }[], requestedBy: string, context?: Record<string, unknown>) => Promise<AgentRunResult>;
   aiAvailable: boolean;
+  open: boolean;
+  onToggle: () => void;
 }
 
 const SUGGESTED_PROMPTS = [
@@ -26,8 +28,7 @@ const SUGGESTED_PROMPTS = [
   'What is the status of all ALPHA harnesses?',
 ];
 
-export function ChatPanel({ userName, onUserNameChange, onAgentResult, context, onRunAgent, aiAvailable }: Props) {
-  const [open, setOpen] = useState(false);
+export function ChatPanel({ userName, onUserNameChange, onAgentResult, context, onRunAgent, aiAvailable, open, onToggle }: Props) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,25 +92,9 @@ export function ChatPanel({ userName, onUserNameChange, onAgentResult, context, 
 
   return (
     <>
-      {/* Toggle button */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={`fixed bottom-4 right-4 z-40 flex items-center gap-2 px-3 py-2 rounded-full border shadow-lg text-xs font-semibold transition-all ${
-          open
-            ? 'bg-surface border-border text-mid'
-            : 'bg-done/10 border-done/40 text-done hover:bg-done/20'
-        }`}
-      >
-        <span className="font-mono text-sm">{open ? '✕' : '⌘'}</span>
-        {!open && <span>Chat</span>}
-        {!aiAvailable && !open && (
-          <span className="w-1.5 h-1.5 rounded-full bg-risk animate-pulse" />
-        )}
-      </button>
-
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-14 right-4 z-40 w-[420px] max-h-[600px] flex flex-col bg-surface border border-border rounded-xl shadow-2xl overflow-hidden">
+        <div className="fixed bottom-4 right-4 z-40 w-[420px] max-h-[600px] flex flex-col bg-surface border border-border rounded-xl shadow-2xl overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
             <div className="flex items-center gap-2">
@@ -132,6 +117,7 @@ export function ChatPanel({ userName, onUserNameChange, onAgentResult, context, 
                   Clear
                 </button>
               )}
+              <button onClick={onToggle} className="text-dim hover:text-mid text-sm leading-none transition-colors">✕</button>
             </div>
           </div>
 
